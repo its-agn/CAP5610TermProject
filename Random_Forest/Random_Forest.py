@@ -5,7 +5,7 @@ Keating Sane - CAP5610 Spring 2026
 Run modes:
     python Random_Forest.py                      # quick run (subsampled, val set)
     python Random_Forest.py --single-tree        # same but with just a single Decision Tree
-    python Random_Forest.py --tune               # hyperparameter grid search → tuning_log.md
+    python Random_Forest.py --tune               # Optuna hyperparameter tuning → tuning_log.md
     python Random_Forest.py --final              # full 650k train, evaluate on test set
     python Random_Forest.py --final --single-tree
 """
@@ -13,87 +13,37 @@ import argparse
 import os
 import sys
 import time
-from datetime import datetime
-from itertools import product
+from typing import Literal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from utils import timed_step
+from utils import (
+    compute_metrics,
+    load_best_params,
+    load_yelp_data,
+    plot_confusion_matrix,
+    print_metrics,
+    save_results,
+    timed_step,
+    tune_model,
+)
 
 with timed_step("Loading libraries"):
     import numpy as np
-    from datasets import load_dataset
     from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.model_selection import cross_val_score
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.tree import DecisionTreeClassifier
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import (
-        accuracy_score,
-        precision_score,
-        recall_score,
-        f1_score,
-        confusion_matrix,
-        classification_report,
-    )
-    import matplotlib.pyplot as plt
-    import seaborn as sns
 
 import logging
 logging.getLogger("huggingface_hub.utils._http").setLevel(logging.CRITICAL)
 
-LABEL_NAMES = ["1 star", "2 stars", "3 stars", "4 stars", "5 stars"]
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TUNING_LOG = os.path.join(SCRIPT_DIR, "tuning_log.md")
 RESULTS_LOG = os.path.join(SCRIPT_DIR, "results_log.md")
-
-def load_yelp_data(train_size: int | None = 150000, val_split: float = 0.1):
-    """
-    Pull yelp_review_full from HuggingFace (cached after first download).
-    Optionally subsample training set for shorter runs. Keeps class
-    balance via stratified split. Carves out a validation set from the
-    training data so the test set is not touched during tuning.
-    """
-    # silence HF warnings and progress bars so they do not interfere with timer
-    _stderr = sys.stderr
-    sys.stderr = open(os.devnull, "w")
-    try:
-        dataset = load_dataset("yelp_review_full")
-    finally:
-        sys.stderr.close()
-        sys.stderr = _stderr
-
-    # convert to plain lists as HF returns lazy objects that are slow to index
-    train_texts = list(dataset["train"]["text"])
-    train_labels = list(dataset["train"]["label"])  # labels are 0-4, mapping to 1-5 stars
-    test_texts = list(dataset["test"]["text"])
-    test_labels = list(dataset["test"]["label"])
-
-    # subsample if requested (full dataset is 650k which takes ~1hr for RF)
-    if train_size and train_size < len(train_texts):
-        train_texts, _, train_labels, _ = train_test_split(
-            train_texts, train_labels,
-            train_size=train_size, stratify=train_labels, random_state=0,
-        )
-
-    # hold out a validation set from training data
-    val_texts, val_labels = None, None
-    if val_split and val_split > 0:
-        train_texts, val_texts, train_labels, val_labels = train_test_split(
-            train_texts, train_labels,
-            test_size=val_split, stratify=train_labels, random_state=0,
-        )
-
-    return (
-        train_texts, np.array(train_labels),
-        val_texts, np.array(val_labels) if val_labels is not None else None,
-        test_texts, np.array(test_labels),
-    )
+BEST_PARAMS_FILE = os.path.join(SCRIPT_DIR, "best_params.json")
 
 def extract_features(train_texts, eval_texts, max_features=20000, ngram_range=(1, 2)):
-    """
-    TF-IDF vectorization. Each review becomes a sparse vector of word/bigram weights.
-    sublinear_tf uses log(1 + tf) which helps prevent long reviews from dominating.
-    Vocabulary is learned from train_texts only, eval_texts just gets transformed.
-    """
+    """TF-IDF vectorization. Vocabulary is learned from train_texts only."""
     vectorizer = TfidfVectorizer(
         max_features=max_features,
         ngram_range=ngram_range,
@@ -107,11 +57,14 @@ def extract_features(train_texts, eval_texts, max_features=20000, ngram_range=(1
     return X_train, X_eval
 
 def train_model(X_train, y_train, n_estimators=100, max_depth=150,
-                min_samples_leaf=1, random_state=0, single_tree=False):
+                min_samples_leaf=1,
+                max_features: Literal["sqrt", "log2"] | None = "sqrt",
+                random_state=0, single_tree=False):
     if single_tree:
         model = DecisionTreeClassifier(
             max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,
+            max_features=max_features,
             random_state=random_state,
         )
         with timed_step("Fitting decision tree"):
@@ -121,7 +74,8 @@ def train_model(X_train, y_train, n_estimators=100, max_depth=150,
             n_estimators=n_estimators,
             max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,
-            n_jobs=-1,  # use all CPU cores
+            max_features=max_features or "sqrt",
+            n_jobs=-1,
             random_state=random_state,
             verbose=0,
         )
@@ -130,225 +84,75 @@ def train_model(X_train, y_train, n_estimators=100, max_depth=150,
     return model
 
 def evaluate(model, X_eval, y_eval, verbose=True, model_name="Random Forest"):
-    """Run predictions and compute the evaluation metrics."""
+    """Run predictions and compute evaluation metrics."""
     y_pred = model.predict(X_eval)
-
-    metrics = {
-        "accuracy": accuracy_score(y_eval, y_pred),
-        "macro_precision": precision_score(y_eval, y_pred, average="macro"),
-        "macro_recall": recall_score(y_eval, y_pred, average="macro"),
-        "macro_f1": f1_score(y_eval, y_pred, average="macro"),
-    }
-
+    metrics = compute_metrics(y_eval, y_pred)
     if verbose:
-        print("=" * 60)
-        print(f"{model_name} - Evaluation Results")
-        print("=" * 60)
-        print(f"Accuracy:        {metrics['accuracy']:.4f}")
-        print(f"Macro Precision: {metrics['macro_precision']:.4f}")
-        print(f"Macro Recall:    {metrics['macro_recall']:.4f}")
-        print(f"Macro F1-Score:  {metrics['macro_f1']:.4f}")
-        print()
-        print(classification_report(y_eval, y_pred, target_names=LABEL_NAMES))
-
+        print_metrics(metrics, model_name, y_eval, y_pred)
     return y_pred, metrics
 
-def plot_confusion_matrix(y_eval, y_pred, save_path="confusion_matrix_rf.png",
-                          model_name="Random Forest"):
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-    cm = confusion_matrix(y_eval, y_pred)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=LABEL_NAMES, yticklabels=LABEL_NAMES)
-    plt.xlabel("Predicted")
-    plt.ylabel("True")
-    plt.title(f"Confusion Matrix - {model_name} - {date}")
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"Confusion matrix saved to {save_path}")
-
-def save_results(model_name, metrics, elapsed, final=False):
-    """Update results_log.md with the latest run for this model type.
-
-    Each model type (Decision Tree, Random Forest) gets its own section.
-    Running again overwrites that section with the new results.
-    """
-    section = f"{model_name} ({'final' if final else 'validation'})"
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-    new_lines = [
-        f"## {section}",
-        "",
-        f"- **Date:** {date}",
-        f"- **Accuracy:** {metrics['accuracy']:.4f}",
-        f"- **Macro Precision:** {metrics['macro_precision']:.4f}",
-        f"- **Macro Recall:** {metrics['macro_recall']:.4f}",
-        f"- **Macro F1:** {metrics['macro_f1']:.4f}",
-        f"- **Time:** {elapsed:.1f}s ({elapsed/60:.1f}m)",
-    ]
-
-    # parse existing sections from the log
-    existing = {}
-    if os.path.exists(RESULTS_LOG):
-        with open(RESULTS_LOG) as f:
-            current_key = None
-            for line in f:
-                line = line.rstrip("\n")
-                if line.startswith("## "):
-                    current_key = line[3:]
-                    existing[current_key] = []
-                elif current_key is not None:
-                    existing[current_key].append(line)
-
-    # strip trailing blank lines from each section
-    for key in existing:
-        while existing[key] and existing[key][-1] == "":
-            existing[key].pop()
-
-    # update or add section
-    existing[section] = new_lines[1:]  # skip the "## ..." line, key is the section name
-
-    # write it all back
-    with open(RESULTS_LOG, "w") as f:
-        f.write("# Random Forest / Decision Tree - Results Log\n")
-        for key, lines in existing.items():
-            f.write(f"\n## {key}\n")
-            for line in lines:
-                f.write(f"{line}\n")
-
-    print("Results saved to results_log.md")
-
-def _init_tuning_log():
-    """Create (or reset) the tuning log with a fresh table header."""
-    with open(TUNING_LOG, "w") as f:
-        f.write("# Random Forest - Hyperparameter Tuning Log\n\n")
-        f.write("## Tuning decisions\n\n")
-        f.write("Round 1 (54 combos) tested TF-IDF features [10k, 20k, 40k], "
-                "ngrams [(1,1), (1,2)], estimators [50, 100, 200], "
-                "max depth [50, 150, None]. Findings:\n")
-        f.write("- 40k features never outperformed 20k (more noise, no gain)\n")
-        f.write("- Bigrams (1,2) consistently beat unigrams (1,1) by 2-3%\n")
-        f.write("- More trees always improved results (200 > 100 > 50)\n")
-        f.write("- max_depth=50 was always worst; 150 vs None was negligible\n")
-        f.write("- Best result: 20k features, (1,2), 200 trees, depth 150 -> 0.5300 Macro F1\n\n")
-        f.write("Round 2 drops losers (40k features, unigrams, low tree counts, depth 50), "
-                "adds trigrams (1,3), 300 trees, and min_samples_leaf regularization [1, 3, 5].\n\n")
-        f.write("## Results\n\n")
-        f.write("| # | Date | TF-IDF Features | Ngram | Estimators | Max Depth "
-                "| Min Leaf | Train Size | Accuracy | Macro P | Macro R | Macro F1 | Time (s) |\n")
-        f.write("|---|------|-----------------|-------|------------|-----------|"
-                "----------|------------|----------|---------|---------|----------|----------|\n")
-
-def _next_run_number():
-    if not os.path.exists(TUNING_LOG):
-        return 1
-    count = 0
-    with open(TUNING_LOG) as f:
-        for line in f:
-            # count data rows (skip header and separator lines)
-            if line.startswith("|") and not line.startswith("| #") and not line.startswith("|--"):
-                count += 1
-    return count + 1
-
-def log_tuning_result(params, metrics, elapsed):
-    """Append one result row to tuning_log.md."""
-    run = _next_run_number()
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-    depth_str = str(params["max_depth"]) if params["max_depth"] else "None"
-    ngram_str = f"{params['ngram_range'][0]}-{params['ngram_range'][1]}"
-
-    leaf_str = str(params.get("min_samples_leaf", 1))
-    row = (f"| {run} | {date} | {params['tfidf_features']} | {ngram_str} "
-           f"| {params['n_estimators']} | {depth_str} | {leaf_str} | {params['train_size']} "
-           f"| {metrics['accuracy']:.4f} | {metrics['macro_precision']:.4f} "
-           f"| {metrics['macro_recall']:.4f} | {metrics['macro_f1']:.4f} "
-           f"| {elapsed:.0f} |\n")
-
-    with open(TUNING_LOG, "a") as f:
-        f.write(row)
-    print(f"  -> Logged as run #{run}")
-
-# Grid of hyperparameters to search over.
-# Each combo runs on 150k training samples to keep individual runs under ~10 min.
-# Dropped 40k features and unigrams based on first tuning round results.
-TUNING_GRID = {
-    "tfidf_features": [10000, 20000],
-    "ngram_range":    [(1, 2), (1, 3)],
-    "n_estimators":   [200, 300],
-    "max_depth":      [150, None],
-    "min_samples_leaf": [1, 3, 5],
-    "train_size":     [150000],
-}
-
-def run_tuning(grid=TUNING_GRID):
-    """
-    Tune on validation set only.
-    """
-    # reset tuning log for a fresh run
-    _init_tuning_log()
+def run_tuning():
+    """Tune RF with Optuna (Bayesian optimization)."""
+    from sklearn.model_selection import train_test_split
 
     with timed_step("Loading dataset"):
-        _stderr = sys.stderr
-        sys.stderr = open(os.devnull, "w")
-        try:
-            dataset = load_dataset("yelp_review_full")
-        finally:
-            sys.stderr.close()
-            sys.stderr = _stderr
-        all_train_texts = list(dataset["train"]["text"])
-        all_train_labels = list(dataset["train"]["label"])
-        del dataset  # free memory, only need the train split for tuning
+        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0)
 
-    keys = list(grid.keys())
-    combos = list(product(*grid.values()))
-    print(f"{len(combos)} combinations to test")
+    # subsample once for tuning
+    train_texts, _, train_labels, _ = train_test_split(
+        all_texts, list(all_labels),
+        train_size=150000, stratify=all_labels, random_state=0,
+    )
+    y = np.array(train_labels)
 
-    for i, values in enumerate(combos):
-        params = dict(zip(keys, values))
-        print(f"\n{'='*60}")
-        print(f"Run {i+1}/{len(combos)}: {params}")
-        print("=" * 60)
+    def objective(trial):
+        # TF-IDF params
+        tfidf_features = trial.suggest_categorical("tfidf_features", [10000, 20000, 40000])
+        ngram_max = trial.suggest_int("ngram_max", 1, 2)
 
-        # same stratified subsample every time so results are comparable
-        train_texts, _, train_labels, _ = train_test_split(
-            all_train_texts, all_train_labels,
-            train_size=params["train_size"], stratify=all_train_labels, random_state=0,
+        # RF params
+        n_estimators = trial.suggest_categorical("n_estimators", [50, 100, 200])
+        max_depth = trial.suggest_categorical("max_depth", [50, 100, 150])
+        min_samples_leaf = trial.suggest_int("min_samples_leaf", 1, 10)
+        max_features_choice = trial.suggest_categorical("max_features", ["sqrt", "log2"])
+
+        vectorizer = TfidfVectorizer(
+            max_features=tfidf_features,
+            ngram_range=(1, ngram_max),
+            sublinear_tf=True,
+            strip_accents="unicode",
+        )
+        X = vectorizer.fit_transform(train_texts)
+
+        model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            max_features=max_features_choice,
+            n_jobs=-1,
+            random_state=0,
         )
 
-        # split off 10% as validation
-        train_texts, val_texts, train_labels, val_labels = train_test_split(
-            train_texts, train_labels,
-            test_size=0.1, stratify=train_labels, random_state=0,
-        )
-        y_train = np.array(train_labels)
-        y_val = np.array(val_labels)
+        scores = cross_val_score(model, X, y, cv=3, scoring="f1_macro")
+        return scores.mean()
 
-        start = time.time()
-
-        X_train, X_val = extract_features(
-            train_texts, val_texts,
-            max_features=params["tfidf_features"],
-            ngram_range=params["ngram_range"],
-        )
-
-        model = train_model(
-            X_train, y_train,
-            n_estimators=params["n_estimators"],
-            max_depth=params["max_depth"],
-            min_samples_leaf=params.get("min_samples_leaf", 1),
-        )
-
-        _, metrics = evaluate(model, X_val, y_val, verbose=True)
-
-        elapsed = time.time() - start
-        print(f"  Time: {elapsed:.0f}s")
-        log_tuning_result(params, metrics, elapsed)
-
-    print(f"Finished. See all results in {TUNING_LOG}")
+    tune_model(
+        objective,
+        n_trials=30,
+        log_path=TUNING_LOG,
+        best_params_path=BEST_PARAMS_FILE,
+        model_name="Random Forest",
+    )
 
 def main(single_tree=False, final=False):
     run_start = time.time()
     model_name = "Decision Tree" if single_tree else "Random Forest"
+
+    best = load_best_params(BEST_PARAMS_FILE) if not single_tree else None
+    if best:
+        print("Using best tuned params (from best_params.json):")
+        for k, v in best.items():
+            print(f"  {k}: {v}")
 
     if final:
         with timed_step("Loading full dataset (650k, no subsampling)"):
@@ -364,22 +168,34 @@ def main(single_tree=False, final=False):
     assert eval_texts is not None and y_eval is not None
     print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
 
-    X_train, X_eval = extract_features(train_texts, eval_texts)
+    X_train, X_eval = extract_features(
+        train_texts, eval_texts,
+        max_features=best.get("tfidf_features", 20000) if best else 20000,
+        ngram_range=(1, best.get("ngram_max", 2)) if best else (1, 2),
+    )
     print(f"Feature matrix: {X_train.shape}")
 
-    model = train_model(X_train, y_train, single_tree=single_tree)
+    model = train_model(
+        X_train, y_train,
+        n_estimators=best.get("n_estimators", 100) if best else 100,
+        max_depth=best.get("max_depth", 150) if best else 150,
+        min_samples_leaf=best.get("min_samples_leaf", 1) if best else 1,
+        max_features=best.get("max_features", "sqrt") if best else ("sqrt" if not single_tree else None),
+        single_tree=single_tree,
+    )
 
     y_pred, metrics = evaluate(model, X_eval, y_eval, model_name=model_name)
-    cm_path = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
-    plot_confusion_matrix(y_eval, y_pred, save_path=cm_path, model_name=model_name)
+    cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
+    cm_path = os.path.join(SCRIPT_DIR, cm_name)
+    plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
 
     total = time.time() - run_start
-    save_results(model_name, metrics, total, final=final)
+    save_results(model_name, metrics, total, RESULTS_LOG, final=final)
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tune", action="store_true", help="Run hyperparameter grid search")
+    parser.add_argument("--tune", action="store_true", help="Run hyperparameter tuning")
     parser.add_argument("--final", action="store_true", help="Full training set, evaluate on test")
     parser.add_argument("--single-tree", action="store_true",
                         help="Use a single Decision Tree instead of Random Forest")

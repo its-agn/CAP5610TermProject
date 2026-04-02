@@ -11,6 +11,9 @@ venv/
 __pycache__/
 *.pyc
 
+# Data (GloVe embeddings, etc.)
+.data/
+
 # Mac garbage
 .DS_Store
 Thumbs.db

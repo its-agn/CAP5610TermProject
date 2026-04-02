@@ -1,0 +1,8 @@
+{
+  "tfidf_features": 10000,
+  "ngram_max": 2,
+  "n_estimators": 200,
+  "max_depth": 150,
+  "min_samples_leaf": 3,
+  "max_features": "sqrt"
+}

@@ -1,17 +1,36 @@
-# Random Forest - Hyperparameter Tuning Log
+# Random Forest - Tuning Results (2026-04-02 14:25)
 
-## Tuning decisions
+### max_depth capped at 150 for future tuning runs. 300 vs 150 gave only 0.0005 F1 but ~4x slower training.
 
-Round 1 (54 combos) tested TF-IDF features [10k, 20k, 40k], ngrams [(1,1), (1,2)], estimators [50, 100, 200], max depth [50, 150, None]. Findings:
-- 40k features never outperformed 20k (more noise, no gain)
-- Bigrams (1,2) consistently beat unigrams (1,1) by 2-3%
-- More trees always improved results (200 > 100 > 50)
-- max_depth=50 was always worst; 150 vs None was negligible
-- Best result: 20k features, (1,2), 200 trees, depth 150 -> 0.5300 Macro F1
-
-Round 2 drops losers (40k features, unigrams, low tree counts, depth 50), adds trigrams (1,3), 300 trees, and min_samples_leaf regularization [1, 3, 5].
-
-## Results
-
-| # | Date | TF-IDF Features | Ngram | Estimators | Max Depth | Min Leaf | Train Size | Accuracy | Macro P | Macro R | Macro F1 | Time (s) |
-|---|------|-----------------|-------|------------|-----------|----------|------------|----------|---------|---------|----------|----------|
+| #   | Tfidf Features | Ngram Max | N Estimators | Max Depth | Min Samples Leaf | Max Features | Macro F1 | Time (s) |
+| --- | -------------- | --------- | ------------ | --------- | ---------------- | ------------ | -------- | -------- |
+| 1   | 40000          | 2         | 100          | 300       | 1                | sqrt         | 0.5040   | 271      |
+| 2   | 10000          | 2         | 200          | 300       | 6                | sqrt         | 0.5207   | 197      |
+| 3   | 10000          | 2         | 50           | 50        | 5                | log2         | 0.4643   | 30       |
+| 4   | 10000          | 1         | 100          | 50        | 4                | log2         | 0.4516   | 22       |
+| 5   | 20000          | 2         | 200          | 300       | 7                | log2         | 0.5030   | 34       |
+| 6   | 20000          | 1         | 100          | 50        | 2                | log2         | 0.4315   | 15       |
+| 7   | 40000          | 1         | 200          | 50        | 10               | sqrt         | 0.4950   | 90       |
+| 8   | 40000          | 2         | 100          | 50        | 10               | sqrt         | 0.5047   | 45       |
+| 9   | 10000          | 2         | 200          | 50        | 1                | sqrt         | 0.5146   | 302      |
+| 10  | 10000          | 2         | 200          | 50        | 10               | sqrt         | 0.5143   | 85       |
+| 11  | 10000          | 1         | 50           | 150       | 8                | sqrt         | 0.4934   | 20       |
+| 12  | 10000          | 2         | 200          | 300       | 3                | sqrt         | 0.5239   | 431      |
+| 13  | 10000          | 2         | 200          | 300       | 3                | sqrt         | 0.5239   | 212      |
+| 14  | 10000          | 2         | 200          | 300       | 3                | sqrt         | 0.5239   | 206      |
+| 15  | 10000          | 2         | 200          | 300       | 3                | sqrt         | 0.5239   | 218      |
+| 16  | 20000          | 2         | 200          | 150       | 4                | sqrt         | 0.5234   | 260      |
+| 17  | 10000          | 2         | 50           | 300       | 3                | sqrt         | 0.5009   | 144      |
+| 18  | 10000          | 1         | 200          | 300       | 5                | sqrt         | 0.5120   | 164      |
+| 19  | 40000          | 2         | 200          | 300       | 2                | log2         | 0.5092   | 71       |
+| 20  | 20000          | 2         | 50           | 150       | 4                | sqrt         | 0.5022   | 100      |
+| 21  | 10000          | 1         | 200          | 300       | 6                | sqrt         | 0.5101   | 153      |
+| 22  | 10000          | 2         | 200          | 300       | 3                | sqrt         | 0.5239   | 425      |
+| 23  | 10000          | 2         | 200          | 300       | 2                | sqrt         | 0.5204   | 558      |
+| 24  | 10000          | 2         | 200          | 300       | 3                | sqrt         | 0.5239   | 456      |
+| 25  | 10000          | 2         | 200          | 300       | 4                | sqrt         | 0.5206   | 363      |
+| 26  | 10000          | 2         | 200          | 300       | 2                | sqrt         | 0.5204   | 606      |
+| 27  | 10000          | 2         | 200          | 150       | 1                | log2         | 0.5030   | 289      |
+| 28  | 10000          | 2         | 200          | 300       | 5                | sqrt         | 0.5223   | 328      |
+| 29  | 20000          | 2         | 100          | 300       | 3                | sqrt         | 0.5139   | 213      |
+| 30  | 40000          | 2         | 50           | 300       | 1                | sqrt         | 0.4850   | 259      |
