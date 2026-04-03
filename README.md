@@ -44,8 +44,4 @@
 
 - See the header comments of each model file for specific runs.
 
-## AI Use:
-
-- We acknowledge the use of AI to help set up, debug, and configure our models, helping us learn along the way.
-
 University of Central Florida, Spring 2026
