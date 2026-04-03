@@ -42,6 +42,15 @@
 
 ## How to Run
 
-- See the header comments of each model file for specific runs.
+All models share common flags: `--final` (train on full 650k, evaluate on test set), `--tune` (Optuna hyperparameter tuning), and `--no-save` (skip writing to `results_log.md`). By default, models train on a 150k subsample with a validation split.
+
+```bash
+python Random_Forest/Random_Forest.py [--final] [--tune] [--no-save] [--single-tree]
+python CNN/CNN.py                     [--final] [--tune] [--no-save] [--glove-6b | --no-glove]
+```
+
+Model-specific flags:
+- **Random Forest:** `--single-tree` uses a single Decision Tree instead of the ensemble
+- **CNN:** `--glove-6b` uses smaller GloVe 6B 100d embeddings; `--no-glove` uses random embeddings
 
 University of Central Florida, Spring 2026

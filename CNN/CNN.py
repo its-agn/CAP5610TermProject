@@ -2,14 +2,8 @@
 CNN (TextCNN) on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Run modes:
-    python CNN.py                  # quick run (subsampled, val set, GloVe 42B 300d)
-    python CNN.py --glove-6b       # same but with GloVe 6B 100d (smaller/faster)
-    python CNN.py --no-glove       # same but with random embeddings
-    python CNN.py --tune           # Optuna hyperparameter tuning → tuning_log.md
-    python CNN.py --final          # full 650k train, evaluate on test set
+Usage: python CNN.py [--final] [--tune] [--no-save] [--glove-6b | --no-glove]
 """
-import argparse
 import os
 import re
 import sys
@@ -19,6 +13,7 @@ from collections import Counter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
     build_embedding_matrix,
+    common_parser,
     compute_metrics,
     load_best_params,
     load_yelp_data,
@@ -280,7 +275,7 @@ def run_tuning():
         model_name="TextCNN",
     )
 
-def main(final=False, use_glove=True):
+def main(final=False, use_glove=True, no_save=False):
     run_start = time.monotonic()
     if not use_glove:
         model_name = "TextCNN (no GloVe)"
@@ -368,20 +363,19 @@ def main(final=False, use_glove=True):
 
     X_eval_tensor = torch.from_numpy(X_eval)
     y_pred, metrics = evaluate(model, X_eval_tensor, y_eval, model_name=model_name)
-    cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
-    plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
 
     total = time.monotonic() - run_start
-    save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    if not no_save:
+        cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
+        plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+        save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    else:
+        print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 def _parse_and_run():
     global GLOVE_SOURCE, GLOVE_DIM
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--tune", action="store_true",
-                        help="Run hyperparameter tuning")
-    parser.add_argument("--final", action="store_true",
-                        help="Full training set, evaluate on test")
+    parser = common_parser()
     parser.add_argument("--no-glove", action="store_true",
                         help="Use random embeddings instead of GloVe")
     parser.add_argument("--glove-6b", action="store_true",
@@ -393,7 +387,7 @@ def _parse_and_run():
     if args.tune:
         run_tuning()
     else:
-        main(final=args.final, use_glove=not args.no_glove)
+        main(final=args.final, use_glove=not args.no_glove, no_save=args.no_save)
 
 if __name__ == "__main__":
     _parse_and_run()

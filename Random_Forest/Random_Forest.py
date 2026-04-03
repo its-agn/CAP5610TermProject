@@ -2,14 +2,8 @@
 Random Forest on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Run modes:
-    python Random_Forest.py                      # quick run (subsampled, val set)
-    python Random_Forest.py --single-tree        # same but with just a single Decision Tree
-    python Random_Forest.py --tune               # Optuna hyperparameter tuning → tuning_log.md
-    python Random_Forest.py --final              # full 650k train, evaluate on test set
-    python Random_Forest.py --final --single-tree
+Usage: python Random_Forest.py [--final] [--tune] [--no-save] [--single-tree]
 """
-import argparse
 import os
 import sys
 import time
@@ -17,6 +11,7 @@ from typing import Literal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
+    common_parser,
     compute_metrics,
     load_best_params,
     load_yelp_data,
@@ -144,7 +139,7 @@ def run_tuning():
         model_name="Random Forest",
     )
 
-def main(single_tree=False, final=False):
+def main(single_tree=False, final=False, no_save=False):
     run_start = time.time()
     model_name = "Decision Tree" if single_tree else "Random Forest"
 
@@ -185,23 +180,26 @@ def main(single_tree=False, final=False):
     )
 
     y_pred, metrics = evaluate(model, X_eval, y_eval, model_name=model_name)
-    cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
-    cm_path = os.path.join(SCRIPT_DIR, cm_name)
-    plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
 
     total = time.time() - run_start
-    save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    if not no_save:
+        cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
+        cm_path = os.path.join(SCRIPT_DIR, cm_name)
+        plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+        save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    else:
+        print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--tune", action="store_true", help="Run hyperparameter tuning")
-    parser.add_argument("--final", action="store_true", help="Full training set, evaluate on test")
+    parser = common_parser()
     parser.add_argument("--single-tree", action="store_true",
                         help="Use a single Decision Tree instead of Random Forest")
     args = parser.parse_args()
 
-    if args.tune:
+    if args.tune and args.single_tree:
+        parser.error("--tune and --single-tree cannot be combined (tuning only applies to Random Forest)")
+    elif args.tune:
         run_tuning()
     else:
-        main(single_tree=args.single_tree, final=args.final)
+        main(single_tree=args.single_tree, final=args.final, no_save=args.no_save)
