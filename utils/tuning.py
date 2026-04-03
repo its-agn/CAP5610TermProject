@@ -42,8 +42,9 @@ def tune_model(
         print(f"Trial {trial_count[0]}/{n_trials}")
         score = objective(trial)
         elapsed = time.monotonic() - start
-        print(f"  -> F1: {score:.4f} | Best so far: "
-              f"{max(score, study.best_value if study.trials else 0):.4f} | {elapsed:.0f}s")
+        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        best_so_far = max(score, study.best_value) if completed else score
+        print(f"  -> F1: {score:.4f} | Best so far: {best_so_far:.4f} | {elapsed:.0f}s")
         print(f"     {trial.params}")
         print("-" * 60)
         return score

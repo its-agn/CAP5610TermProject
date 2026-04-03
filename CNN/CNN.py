@@ -11,6 +11,7 @@ Run modes:
 """
 import argparse
 import os
+import re
 import sys
 import time
 from collections import Counter
@@ -52,11 +53,17 @@ DEVICE = (
     else torch.device("cpu")
 )
 
+_PUNCT_RE = re.compile(r'[^\w\s]')
+
+def _clean_text(text):
+    """Replace punctuation with spaces to improve GloVe coverage."""
+    return _PUNCT_RE.sub(' ', text.lower())
+
 def build_vocab(texts, max_vocab=25000):
     """Build word -> index mapping from training texts."""
     counter = Counter()
     for text in texts:
-        counter.update(text.lower().split())
+        counter.update(_clean_text(text).split())
     vocab = {"<pad>": 0, "<unk>": 1}
     for word, _ in counter.most_common(max_vocab - 2):
         vocab[word] = len(vocab)
@@ -66,7 +73,7 @@ def texts_to_indices(texts, vocab, max_len=256):
     """Convert texts to padded/truncated index sequences."""
     indices = np.zeros((len(texts), max_len), dtype=np.int64)
     for i, text in enumerate(texts):
-        words = text.lower().split()[:max_len]
+        words = _clean_text(text).split()[:max_len]
         for j, word in enumerate(words):
             indices[i, j] = vocab.get(word, 1)
     return indices
@@ -76,11 +83,13 @@ class TextCNN(nn.Module):
 
     def __init__(self, vocab_size, embed_dim=300, num_filters=100,
                  filter_sizes=(3, 4, 5), num_classes=5, dropout=0.5,
-                 pretrained_embeddings=None):
+                 pretrained_embeddings=None, freeze_embeddings=False):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
         if pretrained_embeddings is not None:
             self.embedding.weight.data.copy_(torch.from_numpy(pretrained_embeddings))
+        if freeze_embeddings:
+            self.embedding.weight.requires_grad = False
         self.convs = nn.ModuleList([
             nn.Conv1d(embed_dim, num_filters, fs) for fs in filter_sizes
         ])
@@ -99,11 +108,24 @@ class TextCNN(nn.Module):
         x = self.dropout(x)
         return self.fc(x)
 
-def train_model(model, train_loader, epochs=5, lr=1e-3):
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
+                val_data=None, patience=3, grad_clip=1.0):
+    trainable = filter(lambda p: p.requires_grad, model.parameters())
+    optimizer = torch.optim.Adam(trainable, lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
     with timed_step("Preparing model"):
         model.to(DEVICE)
+
+    best_val_loss = float('inf')
+    best_state = None
+    epochs_no_improve = 0
+
+    if val_data is not None:
+        X_val_t, y_val_arr = val_data
+        y_val_t = torch.from_numpy(y_val_arr)
+        val_loader = DataLoader(
+            TensorDataset(X_val_t, y_val_t), batch_size=512, shuffle=False,
+        )
 
     for epoch in range(epochs):
         model.train()
@@ -120,6 +142,7 @@ def train_model(model, train_loader, epochs=5, lr=1e-3):
             out = model(batch_X)
             loss = criterion(out, batch_y)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
             total_loss += loss.item() * batch_X.size(0)
             correct += (out.argmax(dim=1) == batch_y).sum().item()
@@ -133,9 +156,42 @@ def train_model(model, train_loader, epochs=5, lr=1e-3):
         elapsed = time.monotonic() - epoch_start
         avg_loss = total_loss / total
         acc = correct / total
-        print(f"\r  Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
-              f"Train Acc: {acc:.4f} - ({elapsed:.1f}s)   ")
 
+        if val_data is not None:
+            model.eval()
+            val_loss = 0
+            val_correct = 0
+            val_total = 0
+            with torch.no_grad():
+                for vb_X, vb_y in val_loader:
+                    vb_X, vb_y = vb_X.to(DEVICE), vb_y.to(DEVICE)
+                    vout = model(vb_X)
+                    vloss = criterion(vout, vb_y)
+                    val_loss += vloss.item() * vb_X.size(0)
+                    val_correct += (vout.argmax(dim=1) == vb_y).sum().item()
+                    val_total += vb_y.size(0)
+            val_avg = val_loss / val_total
+            val_acc = val_correct / val_total
+            print(f"\r  Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
+                  f"Train Acc: {acc:.4f} - Val Loss: {val_avg:.4f} - "
+                  f"Val Acc: {val_acc:.4f} - ({elapsed:.1f}s)   ")
+
+            if val_avg < best_val_loss:
+                best_val_loss = val_avg
+                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= patience:
+                    print(f"  Early stopping at epoch {epoch+1} "
+                          f"(no val improvement for {patience} epochs)")
+                    break
+        else:
+            print(f"\r  Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
+                  f"Train Acc: {acc:.4f} - ({elapsed:.1f}s)   ")
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
     return model
 
 def evaluate(model, X_eval_tensor, y_eval, verbose=True, model_name="TextCNN"):
@@ -206,12 +262,14 @@ def run_tuning():
             filter_sizes=filter_sizes,
             dropout=dropout,
             pretrained_embeddings=embed_matrix,
+            freeze_embeddings=True,
         )
 
         print(f"Training ({epochs} epochs):")
-        model = train_model(model, train_loader, epochs=epochs, lr=lr)
+        model = train_model(model, train_loader, epochs=epochs, lr=lr,
+                            val_data=(X_val_tensor, y_val))
 
-        _, metrics = evaluate(model, X_val_tensor, y_val)
+        _, metrics = evaluate(model, X_val_tensor, y_val, verbose=False)
         return metrics["macro_f1"]
 
     tune_model(
@@ -278,6 +336,18 @@ def main(final=False, use_glove=True):
     epochs = best.get("epochs", 10) if best else 10
     batch_size = best.get("batch_size", 64) if best else 64
 
+    # Early stopping validation split (avoid using test set in --final mode)
+    if final:
+        n_val = int(len(X_train) * 0.05)
+        perm = np.random.RandomState(42).permutation(len(X_train))
+        es_X = torch.from_numpy(X_train[perm[:n_val]])
+        es_y = y_train[perm[:n_val]]
+        X_train = X_train[perm[n_val:]]
+        y_train = y_train[perm[n_val:]]
+        val_data = (es_X, es_y)
+    else:
+        val_data = (torch.from_numpy(X_eval), y_eval)
+
     train_dataset = TensorDataset(
         torch.from_numpy(X_train), torch.from_numpy(y_train),
     )
@@ -294,7 +364,7 @@ def main(final=False, use_glove=True):
 
     embed_label = f"GloVe {GLOVE_DIM}d" if use_glove else "random embeddings"
     print(f"Training ({epochs} epochs, {embed_label}):")
-    model = train_model(model, train_loader, epochs=epochs, lr=lr)
+    model = train_model(model, train_loader, epochs=epochs, lr=lr, val_data=val_data)
 
     X_eval_tensor = torch.from_numpy(X_eval)
     y_pred, metrics = evaluate(model, X_eval_tensor, y_eval, model_name=model_name)

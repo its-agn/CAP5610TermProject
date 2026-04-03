@@ -6,6 +6,7 @@ pyproject.toml
 venv/
 .venv/
 .env
+.envrc
 
 # Cache
 __pycache__/
