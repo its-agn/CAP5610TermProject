@@ -78,13 +78,11 @@ class TextCNN(nn.Module):
 
     def __init__(self, vocab_size, embed_dim=300, num_filters=100,
                  filter_sizes=(3, 4, 5), num_classes=5, dropout=0.5,
-                 pretrained_embeddings=None, freeze_embeddings=False):
+                 pretrained_embeddings=None):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
         if pretrained_embeddings is not None:
             self.embedding.weight.data.copy_(torch.from_numpy(pretrained_embeddings))
-        if freeze_embeddings:
-            self.embedding.weight.requires_grad = False
         self.convs = nn.ModuleList([
             nn.Conv1d(embed_dim, num_filters, fs) for fs in filter_sizes
         ])
@@ -105,11 +103,9 @@ class TextCNN(nn.Module):
 
 def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
                 val_data=None, patience=3, grad_clip=1.0):
-    trainable = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = torch.optim.Adam(trainable, lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
-    with timed_step("Preparing model"):
-        model.to(DEVICE)
+    model.to(DEVICE)
 
     best_val_loss = float('inf')
     best_state = None
@@ -210,7 +206,6 @@ def run_tuning():
     """Tune CNN with Optuna (Bayesian optimization)."""
     with timed_step("Loading dataset"):
         all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0)
-    print(f"Device: {DEVICE}")
 
     # subsample + split once (consistent across trials)
     train_texts, _, train_labels, _ = train_test_split(
@@ -235,11 +230,12 @@ def run_tuning():
     X_val_tensor = torch.from_numpy(X_val)
 
     def objective(trial):
-        num_filters = trial.suggest_categorical("num_filters", [100, 200])
+        num_filters = trial.suggest_categorical("num_filters", [100, 200, 300])
         filter_cfg = trial.suggest_categorical("filter_sizes", ["3,4,5", "2,3,4,5"])
         filter_sizes = tuple(int(x) for x in filter_cfg.split(","))
         dropout = trial.suggest_float("dropout", 0.2, 0.6)
         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
         batch_size = trial.suggest_categorical("batch_size", [64, 128])
         epochs = trial.suggest_int("epochs", 5, 15)
 
@@ -257,12 +253,10 @@ def run_tuning():
             filter_sizes=filter_sizes,
             dropout=dropout,
             pretrained_embeddings=embed_matrix,
-            freeze_embeddings=True,
         )
 
-        print(f"Training ({epochs} epochs):")
         model = train_model(model, train_loader, epochs=epochs, lr=lr,
-                            val_data=(X_val_tensor, y_val))
+                            weight_decay=weight_decay, val_data=(X_val_tensor, y_val))
 
         _, metrics = evaluate(model, X_val_tensor, y_val, verbose=False)
         return metrics["macro_f1"]
@@ -304,12 +298,10 @@ def main(final=False, use_glove=True, no_save=False):
         eval_label = "validation"
 
     assert eval_texts is not None and y_eval is not None
-    print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
-    print(f"Device: {DEVICE}")
+    print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)} | Device: {DEVICE}")
 
     with timed_step("Building vocabulary"):
         vocab = build_vocab(train_texts)
-    print(f"Vocabulary size: {len(vocab)}")
 
     with timed_step("Tokenizing texts"):
         X_train = texts_to_indices(train_texts, vocab)
@@ -318,18 +310,23 @@ def main(final=False, use_glove=True, no_save=False):
     embed_matrix = build_embedding_matrix(vocab, source=GLOVE_SOURCE, dim=GLOVE_DIM) if use_glove else None
     embed_dim = GLOVE_DIM if use_glove else 256
 
-    # parse filter_sizes from tuned params (stored as "3,4,5" string by Optuna)
-    if best and "filter_sizes" in best:
+    if best:
         fs = best["filter_sizes"]
         filter_sizes = tuple(int(x) for x in fs.split(",")) if isinstance(fs, str) else fs
+        num_filters = best["num_filters"]
+        dropout = best["dropout"]
+        lr = best["lr"]
+        weight_decay = best["weight_decay"]
+        epochs = best["epochs"]
+        batch_size = best["batch_size"]
     else:
         filter_sizes = (3, 4, 5)
-
-    num_filters = best.get("num_filters", 100) if best else 100
-    dropout = best.get("dropout", 0.5) if best else 0.5
-    lr = best.get("lr", 1e-3) if best else 1e-3
-    epochs = best.get("epochs", 10) if best else 10
-    batch_size = best.get("batch_size", 64) if best else 64
+        num_filters = 100
+        dropout = 0.5
+        lr = 1e-3
+        weight_decay = 1e-4
+        epochs = 10
+        batch_size = 64
 
     # Early stopping validation split (avoid using test set in --final mode)
     if final:
@@ -357,9 +354,8 @@ def main(final=False, use_glove=True, no_save=False):
         pretrained_embeddings=embed_matrix,
     )
 
-    embed_label = f"GloVe {GLOVE_DIM}d" if use_glove else "random embeddings"
-    print(f"Training ({epochs} epochs, {embed_label}):")
-    model = train_model(model, train_loader, epochs=epochs, lr=lr, val_data=val_data)
+    model = train_model(model, train_loader, epochs=epochs, lr=lr,
+                        weight_decay=weight_decay, val_data=val_data)
 
     X_eval_tensor = torch.from_numpy(X_eval)
     y_pred, metrics = evaluate(model, X_eval_tensor, y_eval, model_name=model_name)

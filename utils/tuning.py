@@ -32,20 +32,20 @@ def tune_model(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     study = optuna.create_study(direction="maximize")
-    print(f"{n_trials} trials to run\n")
 
     trial_count = [0]
 
     def timed_objective(trial):
         trial_count[0] += 1
+        label = f"Trial {trial_count[0]}/{n_trials}"
+        print(label)
         start = time.monotonic()
-        print(f"Trial {trial_count[0]}/{n_trials}")
         score = objective(trial)
         elapsed = time.monotonic() - start
         completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
         best_so_far = max(score, study.best_value) if completed else score
-        print(f"  -> F1: {score:.4f} | Best so far: {best_so_far:.4f} | {elapsed:.0f}s")
-        print(f"     {trial.params}")
+        print(f"  F1: {score:.4f} | Best: {best_so_far:.4f} | {elapsed:.0f}s")
+        print("  " + "  ".join(f"{k}={v}" for k, v in trial.params.items()))
         print("-" * 60)
         return score
 
@@ -64,6 +64,8 @@ def tune_model(
     print(f"Best params: {results['best_params']}")
     print("=" * 60)
 
+    if log_path:
+        print(f"Tuning log saved to {log_path}")
     if best_params_path:
         save_best_params(results["best_params"], best_params_path)
 
@@ -148,4 +150,3 @@ def write_tuning_log(results, path, model_name="Model"):
             vals.append(f"{r['best_score']:.4f}")
             vals.append(f"{r['elapsed']:.0f}")
             f.write("| " + " | ".join(vals) + " |\n")
-    print(f"Tuning log written to {path}")

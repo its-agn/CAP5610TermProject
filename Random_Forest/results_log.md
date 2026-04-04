@@ -11,12 +11,12 @@
 
 ## Decision Tree (validation)
 
-- **Date:** 2026-04-03 11:12
-- **Accuracy:** 0.3739
-- **Macro Precision:** 0.3732
-- **Macro Recall:** 0.3739
-- **Macro F1:** 0.3735
-- **Time:** 438.5s (7.3m)
+- **Date:** 2026-04-03 22:20
+- **Accuracy:** 0.3820
+- **Macro Precision:** 0.3808
+- **Macro Recall:** 0.3820
+- **Macro F1:** 0.3814
+- **Time:** 334.0s (5.6m)
 
 ## Random Forest (final)
 
