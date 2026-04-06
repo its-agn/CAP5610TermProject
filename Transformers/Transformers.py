@@ -296,7 +296,7 @@ def run_tuning():
 def main(final=False):
     run_start = time.time()
     model_name = "Transformer Encoder"
-    best = load_best_params(BEST_PARAMS_FILE)
+    best, _ = load_best_params(BEST_PARAMS_FILE)
     params = merge_params(best)
 
     if best:

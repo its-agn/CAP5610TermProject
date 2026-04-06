@@ -1,4 +1,6 @@
 {
-  "C": 1,
-  "max_features": 10000
+  "params": {
+    "C": 1,
+    "max_features": 10000
+  }
 }

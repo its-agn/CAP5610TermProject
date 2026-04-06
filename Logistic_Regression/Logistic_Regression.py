@@ -133,7 +133,7 @@ def main(final=False):
     run_start = time.time()
     model_name = "Logistic Regression"
 
-    best = load_best_params(BEST_PARAMS_FILE)
+    best, _ = load_best_params(BEST_PARAMS_FILE)
     if best:
         print(f"Using tuned params: {best}")
 
