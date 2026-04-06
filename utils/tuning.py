@@ -12,6 +12,7 @@ def tune_model(
     log_path: str | None = None,
     best_params_path: str | None = None,
     model_name: str = "Model",
+    cpu_only: bool = False,
 ):
     """Run Optuna hyperparameter optimization.
 
@@ -35,17 +36,21 @@ def tune_model(
 
     trial_count = [0]
 
+    def _fmt_val(v):
+        """Format a param value for display (round floats to 4 decimal places)."""
+        if isinstance(v, float):
+            return f"{v:.4f}"
+        return str(v)
+
     def timed_objective(trial):
         trial_count[0] += 1
-        label = f"Trial {trial_count[0]}/{n_trials}"
-        print(label)
+        print(f"\nTrial {trial_count[0]}/{n_trials}")
         start = time.monotonic()
         score = objective(trial)
         elapsed = time.monotonic() - start
-        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        best_so_far = max(score, study.best_value) if completed else score
+        best_so_far = max(score, study.best_value) if trial_count[0] > 1 else score
         print(f"  F1: {score:.4f} | Best: {best_so_far:.4f} | {elapsed:.0f}s")
-        print("  " + "  ".join(f"{k}={v}" for k, v in trial.params.items()))
+        print("  " + "  ".join(f"{k}={_fmt_val(v)}" for k, v in trial.params.items()))
         print("-" * 60)
         return score
 
@@ -53,21 +58,27 @@ def tune_model(
         if _trial.state != optuna.trial.TrialState.COMPLETE:
             return
         if log_path:
-            write_tuning_log(_study_to_results(_study), log_path, model_name=model_name)
+            write_tuning_log(_study_to_results(_study), log_path, model_name=model_name, cpu_only=cpu_only)
 
+    tuning_start = time.monotonic()
     study.optimize(timed_objective, n_trials=n_trials, callbacks=[callback])
+    total_time = time.monotonic() - tuning_start
 
     results = _study_to_results(study)
 
     print(f"\n{'='*60}")
     print(f"Overall best F1: {results['best_score']:.4f}")
-    print(f"Best params: {results['best_params']}")
+    print("Best params:")
+    for k, v in results["best_params"].items():
+        print(f"  {k}: {_fmt_val(v)}")
+    print(f"Total tuning time: {total_time:.0f}s ({total_time/60:.1f}m)")
     print("=" * 60)
 
     if log_path:
+        write_tuning_log(results, log_path, model_name=model_name, cpu_only=cpu_only, total_time=total_time)
         print(f"Tuning log saved to {log_path}")
     if best_params_path:
-        save_best_params(results["best_params"], best_params_path)
+        save_best_params(results["best_params"], best_params_path, score=results["best_score"])
 
     return results
 
@@ -81,7 +92,7 @@ def _study_to_results(study):
             elapsed = (trial.datetime_complete - trial.datetime_start).total_seconds()
             all_results.append({
                 "params": trial.params,
-                "best_score": trial.value,
+                "score": trial.value,
                 "elapsed": elapsed,
             })
 
@@ -91,11 +102,23 @@ def _study_to_results(study):
         "all_results": all_results,
     }
 
-def save_best_params(params, path):
-    """Save best params dict to JSON. Converts tuples to lists for serialization."""
+def save_best_params(params, path, score=None):
+    """Save best params dict to JSON. Converts tuples to lists for serialization.
+    If score is provided, only overwrites if the new score beats the existing one.
+    """
+    if score is not None and os.path.exists(path):
+        with open(path) as f:
+            existing = json.load(f)
+        old_score = existing.get("_score")
+        if old_score is not None and score <= old_score:
+            print(f"Keeping existing best params ({old_score:.4f} >= {score:.4f})")
+            return
+
     serializable = {}
     for k, v in params.items():
         serializable[k] = list(v) if isinstance(v, tuple) else v
+    if score is not None:
+        serializable["_score"] = score
     with open(path, "w") as f:
         json.dump(serializable, f, indent=2)
     print(f"Best params saved to {path}")
@@ -106,12 +129,13 @@ def load_best_params(path):
         return None
     with open(path) as f:
         params = json.load(f)
+    params.pop("_score", None)
     for k, v in params.items():
         if isinstance(v, list):
             params[k] = tuple(v)
     return params
 
-def write_tuning_log(results, path, model_name="Model"):
+def write_tuning_log(results, path, model_name="Model", cpu_only=False, total_time=None):
     """Write a markdown summary of tuning results.
 
     Columns are derived from the param keys in the results, so this works
@@ -129,12 +153,16 @@ def write_tuning_log(results, path, model_name="Model"):
     def col_name(key):
         return key.replace("_", " ").title()
 
+    from .evaluation import get_device_name
+
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    device = get_device_name(cpu_only=cpu_only)
     headers = ["#"] + [col_name(k) for k in param_keys] + ["Macro F1", "Time (s)"]
     sep = "|".join("---" for _ in headers)
 
     with open(path, "w") as f:
         f.write(f"# {model_name} - Tuning Results ({date})\n\n")
+        f.write(f"**Device:** {device}\n\n")
         f.write("| " + " | ".join(headers) + " |\n")
         f.write("|" + sep + "|\n")
         for i, r in enumerate(results["all_results"]):
@@ -147,6 +175,16 @@ def write_tuning_log(results, path, model_name="Model"):
                 elif v is None:
                     v = "None"
                 vals.append(str(v))
-            vals.append(f"{r['best_score']:.4f}")
+            vals.append(f"{r['score']:.4f}")
             vals.append(f"{r['elapsed']:.0f}")
             f.write("| " + " | ".join(vals) + " |\n")
+
+        if total_time is not None:
+            f.write(f"\n## Best Result (This Run)\n\n")
+            f.write(f"- **Macro F1:** {results['best_score']:.4f}\n")
+            for k, v in results["best_params"].items():
+                if isinstance(v, float):
+                    f.write(f"- **{col_name(k)}:** {v:.4f}\n")
+                else:
+                    f.write(f"- **{col_name(k)}:** {v}\n")
+            f.write(f"- **Total Tuning Time:** {total_time:.0f}s ({total_time/60:.1f}m)\n")

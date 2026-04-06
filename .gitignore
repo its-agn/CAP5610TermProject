@@ -13,6 +13,7 @@ __pycache__/
 *.pyc
 
 # Data (GloVe embeddings, etc.)
+.data/
 data/
 
 # Mac garbage

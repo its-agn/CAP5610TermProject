@@ -1,9 +1,61 @@
 """Shared evaluation, plotting, and results logging."""
 
 import os
+import platform
 from datetime import datetime
 
 from .data import LABEL_NAMES
+
+def _get_cpu_name():
+    """Get the CPU model name."""
+    # Linux / WSL
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if "model name" in line:
+                    return line.split(":")[1].strip()
+    except FileNotFoundError:
+        pass
+    # macOS
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    # Windows — use wmic to get CPU name
+    if platform.system() == "Windows":
+        try:
+            result = subprocess.run(
+                ["wmic", "cpu", "get", "name"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+                if len(lines) >= 2:
+                    return lines[1]
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    return platform.processor() or "Unknown CPU"
+
+def get_device_name(cpu_only=False):
+    """Detect the compute device (GPU if available, otherwise CPU name).
+    Pass cpu_only=True for models that only run on CPU (e.g. sklearn).
+    """
+    if not cpu_only:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.get_device_name(0)
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return "Apple MPS"
+        except ImportError:
+            pass
+    return _get_cpu_name()
 
 def compute_metrics(y_true, y_pred):
     """Compute standard multi-class classification metrics."""
@@ -50,17 +102,23 @@ def plot_confusion_matrix(y_true, y_pred, save_path, model_name):
     plt.close()
     print(f"Confusion matrix saved to {save_path}")
 
-def save_results(model_name, metrics, elapsed, log_path, final=False):
+def save_results(model_name, metrics, elapsed, log_path, final=False, device=None,
+                 default_params=False):
     """Update a results_log.md with the latest run for this model.
 
     Each model/mode combo (e.g. "Random Forest (final)") gets its own section.
     Running again overwrites that section with new results.
     """
-    section = f"{model_name} ({'final' if final else 'validation'})"
+    mode = "final" if final else "validation"
+    params_tag = "default params" if default_params else "best params"
+    section = f"{model_name} ({mode}, {params_tag})"
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if device is None:
+        device = get_device_name()
     new_lines = [
         "",
         f"- **Date:** {date}",
+        f"- **Device:** {device}",
         f"- **Accuracy:** {metrics['accuracy']:.4f}",
         f"- **Macro Precision:** {metrics['macro_precision']:.4f}",
         f"- **Macro Recall:** {metrics['macro_recall']:.4f}",

@@ -10,5 +10,7 @@ def common_parser():
     parser.add_argument("--final", action="store_true",
                         help="Full training set, evaluate on test")
     parser.add_argument("--no-save", action="store_true",
-                        help="Skip saving results to results_log.md")
+                        help="Skip saving results (results_log.md and tuning outputs)")
+    parser.add_argument("--default-params", action="store_true",
+                        help="Use default params even when tuned best_params.json exists")
     return parser

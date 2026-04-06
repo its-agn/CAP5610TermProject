@@ -2,7 +2,7 @@
 CNN (TextCNN) on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Usage: python CNN.py [--final] [--tune] [--no-save] [--glove-6b | --no-glove]
+Usage: python CNN.py [common flags] [--glove-6b | --no-glove]
 """
 import os
 import re
@@ -19,6 +19,7 @@ from utils import (
     load_yelp_data,
     plot_confusion_matrix,
     print_metrics,
+    save_best_params,
     save_results,
     timed_step,
     tune_model,
@@ -26,6 +27,21 @@ from utils import (
 
 GLOVE_SOURCE = "42B"
 GLOVE_DIM = 300
+
+if __name__ == "__main__":
+    parser = common_parser()
+    parser.add_argument("--no-glove", action="store_true",
+                        help="Use random embeddings instead of GloVe")
+    parser.add_argument("--glove-6b", action="store_true",
+                        help="Use GloVe 6B 100d instead of 42B 300d")
+    args = parser.parse_args()
+    if args.tune and (args.final or args.default_params or args.no_glove):
+        parser.error("--tune cannot be combined with --final, --default-params, or --no-glove")
+    if args.no_glove and args.glove_6b:
+        parser.error("--no-glove and --glove-6b cannot be combined")
+    if args.glove_6b:
+        GLOVE_SOURCE = "6B"
+        GLOVE_DIM = 100
 
 with timed_step("Loading libraries"):
     import numpy as np
@@ -101,11 +117,12 @@ class TextCNN(nn.Module):
         x = self.dropout(x)
         return self.fc(x)
 
-def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
-                val_data=None, patience=3, grad_clip=1.0):
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    criterion = nn.CrossEntropyLoss()
-    model.to(DEVICE)
+def train_model(model, train_loader, epochs=5, lr=1e-3,
+                val_data=None, patience=3, grad_clip=1.0, indent=""):
+    with timed_step(f"{indent}Initializing model on {DEVICE}"):
+        model.to(DEVICE)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss()
 
     best_val_loss = float('inf')
     best_state = None
@@ -141,7 +158,7 @@ def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
             now = time.monotonic()
             if now - last_print >= 0.1 or batch_i + 1 == n_batches:
                 last_print = now
-                print(f"\r  Epoch {epoch+1}/{epochs} - "
+                print(f"\r{indent}Epoch {epoch+1}/{epochs} - "
                       f"Batch {batch_i+1}/{n_batches} - ({now - epoch_start:.1f}s)", end="")
 
         elapsed = time.monotonic() - epoch_start
@@ -163,7 +180,7 @@ def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
                     val_total += vb_y.size(0)
             val_avg = val_loss / val_total
             val_acc = val_correct / val_total
-            print(f"\r  Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
+            print(f"\r{indent}Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
                   f"Train Acc: {acc:.4f} - Val Loss: {val_avg:.4f} - "
                   f"Val Acc: {val_acc:.4f} - ({elapsed:.1f}s)   ")
 
@@ -174,11 +191,11 @@ def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
             else:
                 epochs_no_improve += 1
                 if epochs_no_improve >= patience:
-                    print(f"  Early stopping at epoch {epoch+1} "
+                    print(f"{indent}Early stopping at epoch {epoch+1} "
                           f"(no val improvement for {patience} epochs)")
                     break
         else:
-            print(f"\r  Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
+            print(f"\r{indent}Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
                   f"Train Acc: {acc:.4f} - ({elapsed:.1f}s)   ")
 
     if best_state is not None:
@@ -202,10 +219,10 @@ def evaluate(model, X_eval_tensor, y_eval, verbose=True, model_name="TextCNN"):
         print_metrics(metrics, model_name, y_eval, y_pred)
     return y_pred, metrics
 
-def run_tuning():
+def run_tuning(no_save=False):
     """Tune CNN with Optuna (Bayesian optimization)."""
     with timed_step("Loading dataset"):
-        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0)
+        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0, skip_test=True)
 
     # subsample + split once (consistent across trials)
     train_texts, _, train_labels, _ = train_test_split(
@@ -235,7 +252,6 @@ def run_tuning():
         filter_sizes = tuple(int(x) for x in filter_cfg.split(","))
         dropout = trial.suggest_float("dropout", 0.2, 0.6)
         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
         batch_size = trial.suggest_categorical("batch_size", [64, 128])
         epochs = trial.suggest_int("epochs", 5, 15)
 
@@ -256,33 +272,56 @@ def run_tuning():
         )
 
         model = train_model(model, train_loader, epochs=epochs, lr=lr,
-                            weight_decay=weight_decay, val_data=(X_val_tensor, y_val))
+                            val_data=(X_val_tensor, y_val), indent="  ")
 
         _, metrics = evaluate(model, X_val_tensor, y_val, verbose=False)
         return metrics["macro_f1"]
 
-    tune_model(
+    results = tune_model(
         objective,
         n_trials=30,
-        log_path=TUNING_LOG,
-        best_params_path=BEST_PARAMS_FILE,
+        log_path=None if no_save else TUNING_LOG,
+        best_params_path=None,
         model_name="TextCNN",
     )
+    if not no_save:
+        params = results["best_params"]
+        params["glove_source"] = GLOVE_SOURCE
+        params["glove_dim"] = GLOVE_DIM
+        save_best_params(params, BEST_PARAMS_FILE, score=results["best_score"])
 
-def main(final=False, use_glove=True, no_save=False):
+def main(final=False, use_glove=True, no_save=False, default_params=False):
     run_start = time.monotonic()
     if not use_glove:
         model_name = "TextCNN (no GloVe)"
-    elif GLOVE_SOURCE != "42B" or GLOVE_DIM != 300:
-        model_name = f"TextCNN (GloVe {GLOVE_SOURCE} {GLOVE_DIM}d)"
     else:
-        model_name = "TextCNN"
+        model_name = f"TextCNN (GloVe {GLOVE_SOURCE} {GLOVE_DIM}d)"
 
-    best = load_best_params(BEST_PARAMS_FILE)
-    if best:
+    DEFAULT_PARAMS = {
+        "num_filters": 100, "filter_sizes": "3,4,5", "dropout": 0.5,
+        "lr": 1e-3, "batch_size": 64, "epochs": 10,
+    }
+
+    params = None if default_params else load_best_params(BEST_PARAMS_FILE)
+    using_defaults = params is None
+    if not using_defaults:
+        saved_source = params.pop("glove_source", None)
+        saved_dim = params.pop("glove_dim", None)
+        if saved_source and use_glove and (saved_source != GLOVE_SOURCE or saved_dim != GLOVE_DIM):
+            sys.exit(f"Error: best params were tuned with GloVe {saved_source} {saved_dim}d "
+                     f"but running with GloVe {GLOVE_SOURCE} {GLOVE_DIM}d. "
+                     f"Use --default-params to ignore best params.")
+        elif saved_source and not use_glove:
+            sys.exit(f"Error: best params were tuned with GloVe {saved_source} {saved_dim}d "
+                     f"but running without GloVe (--no-glove). "
+                     f"Use --default-params to ignore best params.")
+    if using_defaults:
+        params = DEFAULT_PARAMS
+        print("Using default params:")
+    else:
         print("Using best tuned params (from best_params.json):")
-        for k, v in best.items():
-            print(f"  {k}: {v}")
+    for k, v in params.items():
+        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
     if final:
         with timed_step("Loading full dataset (650k, no subsampling)"):
@@ -298,7 +337,7 @@ def main(final=False, use_glove=True, no_save=False):
         eval_label = "validation"
 
     assert eval_texts is not None and y_eval is not None
-    print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)} | Device: {DEVICE}")
+    print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
 
     with timed_step("Building vocabulary"):
         vocab = build_vocab(train_texts)
@@ -310,23 +349,13 @@ def main(final=False, use_glove=True, no_save=False):
     embed_matrix = build_embedding_matrix(vocab, source=GLOVE_SOURCE, dim=GLOVE_DIM) if use_glove else None
     embed_dim = GLOVE_DIM if use_glove else 256
 
-    if best:
-        fs = best["filter_sizes"]
-        filter_sizes = tuple(int(x) for x in fs.split(",")) if isinstance(fs, str) else fs
-        num_filters = best["num_filters"]
-        dropout = best["dropout"]
-        lr = best["lr"]
-        weight_decay = best["weight_decay"]
-        epochs = best["epochs"]
-        batch_size = best["batch_size"]
-    else:
-        filter_sizes = (3, 4, 5)
-        num_filters = 100
-        dropout = 0.5
-        lr = 1e-3
-        weight_decay = 1e-4
-        epochs = 10
-        batch_size = 64
+    fs = params["filter_sizes"]
+    filter_sizes = tuple(int(x) for x in fs.split(",")) if isinstance(fs, str) else fs
+    num_filters = params["num_filters"]
+    dropout = params["dropout"]
+    lr = params["lr"]
+    epochs = params["epochs"]
+    batch_size = params["batch_size"]
 
     # Early stopping validation split (avoid using test set in --final mode)
     if final:
@@ -353,9 +382,10 @@ def main(final=False, use_glove=True, no_save=False):
         dropout=dropout,
         pretrained_embeddings=embed_matrix,
     )
+    print(f"Model params: {sum(p.numel() for p in model.parameters()):,}")
 
     model = train_model(model, train_loader, epochs=epochs, lr=lr,
-                        weight_decay=weight_decay, val_data=val_data)
+                        val_data=val_data)
 
     X_eval_tensor = torch.from_numpy(X_eval)
     y_pred, metrics = evaluate(model, X_eval_tensor, y_eval, model_name=model_name)
@@ -364,26 +394,15 @@ def main(final=False, use_glove=True, no_save=False):
     if not no_save:
         cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
         plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
-        save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+        save_results(model_name, metrics, total, RESULTS_LOG, final=final,
+                     default_params=using_defaults)
     else:
         print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
-def _parse_and_run():
-    global GLOVE_SOURCE, GLOVE_DIM
-    parser = common_parser()
-    parser.add_argument("--no-glove", action="store_true",
-                        help="Use random embeddings instead of GloVe")
-    parser.add_argument("--glove-6b", action="store_true",
-                        help="Use GloVe 6B 100d instead of 42B 300d")
-    args = parser.parse_args()
-    if args.glove_6b:
-        GLOVE_SOURCE = "6B"
-        GLOVE_DIM = 100
-    if args.tune:
-        run_tuning()
-    else:
-        main(final=args.final, use_glove=not args.no_glove, no_save=args.no_save)
-
 if __name__ == "__main__":
-    _parse_and_run()
+    if args.tune:
+        run_tuning(no_save=args.no_save)
+    else:
+        main(final=args.final, use_glove=not args.no_glove, no_save=args.no_save,
+             default_params=args.default_params)

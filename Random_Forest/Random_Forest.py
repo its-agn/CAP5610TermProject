@@ -2,7 +2,7 @@
 Random Forest on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Usage: python Random_Forest.py [--final] [--tune] [--no-save] [--single-tree]
+Usage: python Random_Forest.py [common flags] [--single-tree]
 """
 import os
 import sys
@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
     common_parser,
     compute_metrics,
+    get_device_name,
     load_best_params,
     load_yelp_data,
     plot_confusion_matrix,
@@ -21,6 +22,14 @@ from utils import (
     timed_step,
     tune_model,
 )
+
+if __name__ == "__main__":
+    parser = common_parser()
+    parser.add_argument("--single-tree", action="store_true",
+                        help="Use a single Decision Tree instead of Random Forest")
+    args = parser.parse_args()
+    if args.tune and (args.final or args.default_params or args.single_tree):
+        parser.error("--tune cannot be combined with --final, --default-params, or --single-tree")
 
 with timed_step("Loading libraries"):
     import numpy as np
@@ -81,12 +90,12 @@ def evaluate(model, X_eval, y_eval, verbose=True, model_name="Random Forest"):
         print_metrics(metrics, model_name, y_eval, y_pred)
     return y_pred, metrics
 
-def run_tuning():
+def run_tuning(no_save=False):
     """Tune RF with Optuna (Bayesian optimization)."""
     from sklearn.model_selection import train_test_split
 
     with timed_step("Loading dataset"):
-        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0)
+        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0, skip_test=True)
 
     # subsample once for tuning
     train_texts, _, train_labels, _ = train_test_split(
@@ -112,7 +121,7 @@ def run_tuning():
             sublinear_tf=True,
             strip_accents="unicode",
         )
-        with timed_step("Vectorizing TF-IDF"):
+        with timed_step("  Vectorizing TF-IDF"):
             X = vectorizer.fit_transform(train_texts)
 
         model = RandomForestClassifier(
@@ -124,27 +133,36 @@ def run_tuning():
             random_state=0,
         )
 
-        with timed_step("Cross-validating (3-fold)"):
+        with timed_step("  Cross-validating (3-fold)"):
             scores = cross_val_score(model, X, y, cv=3, scoring="f1_macro")
         return scores.mean()
 
     tune_model(
         objective,
         n_trials=30,
-        log_path=TUNING_LOG,
-        best_params_path=BEST_PARAMS_FILE,
+        log_path=None if no_save else TUNING_LOG,
+        best_params_path=None if no_save else BEST_PARAMS_FILE,
         model_name="Random Forest",
+        cpu_only=True,
     )
 
-def main(single_tree=False, final=False, no_save=False):
+def main(single_tree=False, final=False, no_save=False, default_params=False):
     run_start = time.monotonic()
     model_name = "Decision Tree" if single_tree else "Random Forest"
 
-    best = load_best_params(BEST_PARAMS_FILE) if not single_tree else None
-    if best:
-        print("Using best tuned params (from best_params.json):")
-        for k, v in best.items():
-            print(f"  {k}: {v}")
+    DEFAULT_PARAMS = {
+        "tfidf_features": 20000, "ngram_max": 2, "n_estimators": 100,
+        "max_depth": 150, "min_samples_leaf": 1, "max_features": "sqrt",
+    }
+
+    params = None if single_tree or default_params else load_best_params(BEST_PARAMS_FILE)
+    using_defaults = params is None
+    if using_defaults:
+        params = DEFAULT_PARAMS
+    if not single_tree:
+        print("Using default params:" if using_defaults else "Using best tuned params (from best_params.json):")
+        for k, v in params.items():
+            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
     if final:
         with timed_step("Loading full dataset (650k, no subsampling)"):
@@ -160,39 +178,22 @@ def main(single_tree=False, final=False, no_save=False):
     assert eval_texts is not None and y_eval is not None
     print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
 
-    if best:
-        tfidf_features = best["tfidf_features"]
-        ngram_max = best["ngram_max"]
-    else:
-        tfidf_features = 20000
-        ngram_max = 2
-
     X_train, X_eval = extract_features(
         train_texts, eval_texts,
-        max_features=tfidf_features,
-        ngram_range=(1, ngram_max),
+        max_features=params["tfidf_features"],
+        ngram_range=(1, params["ngram_max"]),
     )
     print(f"Feature matrix: {X_train.shape}")
 
     if single_tree:
         model = train_model(X_train, y_train, single_tree=True)
     else:
-        if best:
-            n_estimators = best["n_estimators"]
-            max_depth = best["max_depth"]
-            min_samples_leaf = best["min_samples_leaf"]
-            max_features = best["max_features"]
-        else:
-            n_estimators = 100
-            max_depth = 150
-            min_samples_leaf = 1
-            max_features = "sqrt"
         model = train_model(
             X_train, y_train,
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            min_samples_leaf=min_samples_leaf,
-            max_features=max_features,
+            n_estimators=params["n_estimators"],
+            max_depth=params["max_depth"],
+            min_samples_leaf=params["min_samples_leaf"],
+            max_features=params["max_features"],
         )
 
     y_pred, metrics = evaluate(model, X_eval, y_eval, model_name=model_name)
@@ -202,20 +203,16 @@ def main(single_tree=False, final=False, no_save=False):
         cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
         cm_path = os.path.join(SCRIPT_DIR, cm_name)
         plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
-        save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+        device = get_device_name(cpu_only=True)
+        save_results(model_name, metrics, total, RESULTS_LOG, final=final, device=device,
+                     default_params=using_defaults)
     else:
         print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 if __name__ == "__main__":
-    parser = common_parser()
-    parser.add_argument("--single-tree", action="store_true",
-                        help="Use a single Decision Tree instead of Random Forest")
-    args = parser.parse_args()
-
-    if args.tune and args.single_tree:
-        parser.error("--tune and --single-tree cannot be combined (tuning only applies to Random Forest)")
-    elif args.tune:
-        run_tuning()
+    if args.tune:
+        run_tuning(no_save=args.no_save)
     else:
-        main(single_tree=args.single_tree, final=args.final, no_save=args.no_save)
+        main(single_tree=args.single_tree, final=args.final, no_save=args.no_save,
+             default_params=args.default_params)

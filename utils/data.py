@@ -5,12 +5,14 @@ import os
 
 LABEL_NAMES = ["1 star", "2 stars", "3 stars", "4 stars", "5 stars"]
 
-def load_yelp_data(train_size: int | None = 150000, val_split: float = 0.1):
+def load_yelp_data(train_size: int | None = 150000, val_split: float = 0.1,
+                   skip_test: bool = False):
     """Pull yelp_review_full from HuggingFace (cached after first download).
 
     Optionally subsample training set for shorter runs. Keeps class
     balance via stratified split. Carves out a validation set from the
     training data so the test set is not touched during tuning.
+    Pass skip_test=True to skip loading the test split (saves time during tuning).
     """
     import numpy as np
     from datasets import load_dataset
@@ -26,8 +28,11 @@ def load_yelp_data(train_size: int | None = 150000, val_split: float = 0.1):
 
     train_texts = list(dataset["train"]["text"])
     train_labels = list(dataset["train"]["label"])
-    test_texts = list(dataset["test"]["text"])
-    test_labels = list(dataset["test"]["label"])
+    if skip_test:
+        test_texts, test_labels = [], []
+    else:
+        test_texts = list(dataset["test"]["text"])
+        test_labels = list(dataset["test"]["label"])
 
     if train_size and train_size < len(train_texts):
         train_texts, _, train_labels, _ = train_test_split(
