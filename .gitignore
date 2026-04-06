@@ -1,6 +1,7 @@
 # User files
 settings.json
 pyproject.toml
+run_*.sh
 
 # Environment setup
 venv/

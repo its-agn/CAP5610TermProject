@@ -1,9 +1,15 @@
 {
-  "num_filters": 200,
-  "filter_sizes": "2,3,4,5",
-  "dropout": 0.47600620417822004,
-  "lr": 0.0002976499224164491,
-  "weight_decay": 1e-4,
-  "batch_size": 128,
-  "epochs": 15
+  "params": {
+    "num_filters": 200,
+    "filter_sizes": "2,3,4,5",
+    "dropout": 0.3352508177673667,
+    "lr": 0.00020720710727454412,
+    "batch_size": 128,
+    "epochs": 10
+  },
+  "metadata": {
+    "f1_score": 0.6245,
+    "glove_source": "42B",
+    "glove_dim": 300
+  }
 }

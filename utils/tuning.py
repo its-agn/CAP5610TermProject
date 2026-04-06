@@ -13,6 +13,7 @@ def tune_model(
     best_params_path: str | None = None,
     model_name: str = "Model",
     cpu_only: bool = False,
+    extra_info: dict | None = None,
 ):
     """Run Optuna hyperparameter optimization.
 
@@ -58,7 +59,7 @@ def tune_model(
         if _trial.state != optuna.trial.TrialState.COMPLETE:
             return
         if log_path:
-            write_tuning_log(_study_to_results(_study), log_path, model_name=model_name, cpu_only=cpu_only)
+            write_tuning_log(_study_to_results(_study), log_path, model_name=model_name, cpu_only=cpu_only, extra_info=extra_info)
 
     tuning_start = time.monotonic()
     study.optimize(timed_objective, n_trials=n_trials, callbacks=[callback])
@@ -75,7 +76,7 @@ def tune_model(
     print("=" * 60)
 
     if log_path:
-        write_tuning_log(results, log_path, model_name=model_name, cpu_only=cpu_only, total_time=total_time)
+        write_tuning_log(results, log_path, model_name=model_name, cpu_only=cpu_only, total_time=total_time, extra_info=extra_info)
         print(f"Tuning log saved to {log_path}")
     if best_params_path:
         save_best_params(results["best_params"], best_params_path, score=results["best_score"])
@@ -102,14 +103,14 @@ def _study_to_results(study):
         "all_results": all_results,
     }
 
-def save_best_params(params, path, score=None):
+def save_best_params(params, path, score=None, metadata=None):
     """Save best params dict to JSON. Converts tuples to lists for serialization.
     If score is provided, only overwrites if the new score beats the existing one.
     """
     if score is not None and os.path.exists(path):
         with open(path) as f:
             existing = json.load(f)
-        old_score = existing.get("_score")
+        old_score = existing.get("metadata", {}).get("f1_score")
         if old_score is not None and score <= old_score:
             print(f"Keeping existing best params ({old_score:.4f} >= {score:.4f})")
             return
@@ -117,25 +118,31 @@ def save_best_params(params, path, score=None):
     serializable = {}
     for k, v in params.items():
         serializable[k] = list(v) if isinstance(v, tuple) else v
+
+    data = {"params": serializable}
+    meta = metadata or {}
     if score is not None:
-        serializable["_score"] = score
+        meta["f1_score"] = score
+    if meta:
+        data["metadata"] = meta
     with open(path, "w") as f:
-        json.dump(serializable, f, indent=2)
+        json.dump(data, f, indent=2)
     print(f"Best params saved to {path}")
 
 def load_best_params(path):
-    """Load best params from JSON. Converts lists back to tuples."""
+    """Load best params and metadata from JSON. Returns (params, metadata) tuple."""
     if not os.path.exists(path):
-        return None
+        return None, {}
     with open(path) as f:
-        params = json.load(f)
-    params.pop("_score", None)
+        data = json.load(f)
+    params = data["params"]
+    metadata = data.get("metadata", {})
     for k, v in params.items():
         if isinstance(v, list):
             params[k] = tuple(v)
-    return params
+    return params, metadata
 
-def write_tuning_log(results, path, model_name="Model", cpu_only=False, total_time=None):
+def write_tuning_log(results, path, model_name="Model", cpu_only=False, total_time=None, extra_info=None):
     """Write a markdown summary of tuning results.
 
     Columns are derived from the param keys in the results, so this works
@@ -162,7 +169,11 @@ def write_tuning_log(results, path, model_name="Model", cpu_only=False, total_ti
 
     with open(path, "w") as f:
         f.write(f"# {model_name} - Tuning Results ({date})\n\n")
-        f.write(f"**Device:** {device}\n\n")
+        f.write(f"**Device:** {device}  \n")
+        if extra_info:
+            for k, v in extra_info.items():
+                f.write(f"**{k}:** {v}  \n")
+        f.write("\n")
         f.write("| " + " | ".join(headers) + " |\n")
         f.write("|" + sep + "|\n")
         for i, r in enumerate(results["all_results"]):

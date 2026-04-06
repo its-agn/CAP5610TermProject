@@ -30,6 +30,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.tune and (args.final or args.default_params or args.single_tree):
         parser.error("--tune cannot be combined with --final, --default-params, or --single-tree")
+    if args.single_tree and args.default_params:
+        parser.error("--single-tree and --default-params cannot be combined (Decision Tree uses fixed params)")
 
 with timed_step("Loading libraries"):
     import numpy as np
@@ -65,7 +67,8 @@ def train_model(X_train, y_train, n_estimators=100, max_depth=150,
                 max_features: Literal["sqrt", "log2"] = "sqrt",
                 random_state=0, single_tree=False):
     if single_tree:
-        model = DecisionTreeClassifier(random_state=random_state)
+        model = DecisionTreeClassifier(max_depth=max_depth, min_samples_leaf=min_samples_leaf,
+                                       random_state=random_state)
         with timed_step("Fitting decision tree"):
             model.fit(X_train, y_train)
     else:
@@ -150,19 +153,27 @@ def main(single_tree=False, final=False, no_save=False, default_params=False):
     run_start = time.monotonic()
     model_name = "Decision Tree" if single_tree else "Random Forest"
 
-    DEFAULT_PARAMS = {
+    RF_DEFAULT_PARAMS = {
         "tfidf_features": 20000, "ngram_max": 2, "n_estimators": 100,
         "max_depth": 150, "min_samples_leaf": 1, "max_features": "sqrt",
     }
+    DT_PARAMS = {
+        "tfidf_features": 20000, "ngram_max": 2,
+        "max_depth": 100, "min_samples_leaf": 5,
+    }
 
-    params = None if single_tree or default_params else load_best_params(BEST_PARAMS_FILE)
-    using_defaults = params is None
-    if using_defaults:
-        params = DEFAULT_PARAMS
-    if not single_tree:
+    if single_tree:
+        params = DT_PARAMS
+        using_defaults = True
+        print("Using Decision Tree params:")
+    else:
+        params, _ = (None, {}) if default_params else load_best_params(BEST_PARAMS_FILE)
+        using_defaults = params is None
+        if using_defaults:
+            params = RF_DEFAULT_PARAMS
         print("Using default params:" if using_defaults else "Using best tuned params (from best_params.json):")
-        for k, v in params.items():
-            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+    for k, v in params.items():
+        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
     if final:
         with timed_step("Loading full dataset (650k, no subsampling)"):
@@ -186,7 +197,11 @@ def main(single_tree=False, final=False, no_save=False, default_params=False):
     print(f"Feature matrix: {X_train.shape}")
 
     if single_tree:
-        model = train_model(X_train, y_train, single_tree=True)
+        model = train_model(
+            X_train, y_train, single_tree=True,
+            max_depth=params["max_depth"],
+            min_samples_leaf=params["min_samples_leaf"],
+        )
     else:
         model = train_model(
             X_train, y_train,
@@ -200,12 +215,13 @@ def main(single_tree=False, final=False, no_save=False, default_params=False):
 
     total = time.monotonic() - run_start
     if not no_save:
-        cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
-        cm_path = os.path.join(SCRIPT_DIR, cm_name)
-        plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+        if final and (single_tree or not default_params):
+            cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
+            cm_path = os.path.join(SCRIPT_DIR, cm_name)
+            plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
         device = get_device_name(cpu_only=True)
         save_results(model_name, metrics, total, RESULTS_LOG, final=final, device=device,
-                     default_params=using_defaults)
+                     default_params=None if single_tree else using_defaults, params=params)
     else:
         print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")

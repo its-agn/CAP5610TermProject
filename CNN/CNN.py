@@ -283,12 +283,14 @@ def run_tuning(no_save=False):
         log_path=None if no_save else TUNING_LOG,
         best_params_path=None,
         model_name="TextCNN",
+        extra_info={"Embeddings": f"GloVe {GLOVE_SOURCE} {GLOVE_DIM}d"},
     )
     if not no_save:
-        params = results["best_params"]
-        params["glove_source"] = GLOVE_SOURCE
-        params["glove_dim"] = GLOVE_DIM
-        save_best_params(params, BEST_PARAMS_FILE, score=results["best_score"])
+        save_best_params(
+            results["best_params"], BEST_PARAMS_FILE,
+            score=results["best_score"],
+            metadata={"glove_source": GLOVE_SOURCE, "glove_dim": GLOVE_DIM},
+        )
 
 def main(final=False, use_glove=True, no_save=False, default_params=False):
     run_start = time.monotonic()
@@ -302,11 +304,11 @@ def main(final=False, use_glove=True, no_save=False, default_params=False):
         "lr": 1e-3, "batch_size": 64, "epochs": 10,
     }
 
-    params = None if default_params else load_best_params(BEST_PARAMS_FILE)
+    params, metadata = (None, {}) if default_params else load_best_params(BEST_PARAMS_FILE)
     using_defaults = params is None
     if not using_defaults:
-        saved_source = params.pop("glove_source", None)
-        saved_dim = params.pop("glove_dim", None)
+        saved_source = metadata.get("glove_source")
+        saved_dim = metadata.get("glove_dim")
         if saved_source and use_glove and (saved_source != GLOVE_SOURCE or saved_dim != GLOVE_DIM):
             sys.exit(f"Error: best params were tuned with GloVe {saved_source} {saved_dim}d "
                      f"but running with GloVe {GLOVE_SOURCE} {GLOVE_DIM}d. "
@@ -392,10 +394,11 @@ def main(final=False, use_glove=True, no_save=False, default_params=False):
 
     total = time.monotonic() - run_start
     if not no_save:
-        cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
-        plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+        if final and not default_params:
+            cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
+            plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
         save_results(model_name, metrics, total, RESULTS_LOG, final=final,
-                     default_params=using_defaults)
+                     default_params=using_defaults, params=params)
     else:
         print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")

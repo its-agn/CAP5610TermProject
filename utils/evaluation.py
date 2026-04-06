@@ -103,15 +103,19 @@ def plot_confusion_matrix(y_true, y_pred, save_path, model_name):
     print(f"Confusion matrix saved to {save_path}")
 
 def save_results(model_name, metrics, elapsed, log_path, final=False, device=None,
-                 default_params=False):
+                 default_params=False, params=None):
     """Update a results_log.md with the latest run for this model.
 
     Each model/mode combo (e.g. "Random Forest (final)") gets its own section.
     Running again overwrites that section with new results.
+    Pass default_params=None to omit the params tag (e.g. for Decision Tree).
     """
     mode = "final" if final else "validation"
-    params_tag = "default params" if default_params else "best params"
-    section = f"{model_name} ({mode}, {params_tag})"
+    if default_params is None:
+        section = f"{model_name} ({mode})"
+    else:
+        params_tag = "default params" if default_params else "best params"
+        section = f"{model_name} ({mode}, {params_tag})"
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
     if device is None:
         device = get_device_name()
@@ -125,6 +129,15 @@ def save_results(model_name, metrics, elapsed, log_path, final=False, device=Non
         f"- **Macro F1:** {metrics['macro_f1']:.4f}",
         f"- **Time:** {elapsed:.1f}s ({elapsed/60:.1f}m)",
     ]
+    if params:
+        new_lines.append("")
+        new_lines.append("<details>")
+        new_lines.append("<summary>Parameters</summary>")
+        new_lines.append("")
+        for k, v in params.items():
+            new_lines.append(f"- `{k}`: {v:.4f}" if isinstance(v, float) else f"- `{k}`: {v}")
+        new_lines.append("")
+        new_lines.append("</details>")
 
     existing: dict[str, list[str]] = {}
     if os.path.exists(log_path):
