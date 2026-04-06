@@ -84,7 +84,7 @@ def main():
         train_texts, y_train, val_texts, y_val, test_texts, test_labels = load_yelp_data(train_size=args.size)
 
         #If --final is typed, swap validation for the real test set
-        if not args.final:
+        if args.final:
             val_texts, y_val = test_texts, test_labels
             final_string = "(Full test set)"
 
