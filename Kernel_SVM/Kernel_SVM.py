@@ -107,7 +107,7 @@ def main():
     with timed_step(f"Training Kernel SVM (RBF) (C={C})"):
         #kernel='rbf' is the "Radial Basis Function" (the Kernel trick)
         #C=1.0 is the default penalty for mistakes, which ended up being the best value found for this dataset
-        svm_model = SVC(kernel='rbf', C=C, gamma='scale')
+        svm_model = SVC(kernel='rbf', C=C)
 
         #This is where the learning happens
         svm_model.fit(X_train_vectors, y_train)
