@@ -2,14 +2,8 @@
 Random Forest on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Run modes:
-    python Random_Forest.py                      # quick run (subsampled, val set)
-    python Random_Forest.py --single-tree        # same but with just a single Decision Tree
-    python Random_Forest.py --tune               # Optuna hyperparameter tuning → tuning_log.md
-    python Random_Forest.py --final              # full 650k train, evaluate on test set
-    python Random_Forest.py --final --single-tree
+Usage: python Random_Forest.py [--final] [--tune] [--no-save] [--single-tree]
 """
-import argparse
 import os
 import sys
 import time
@@ -17,6 +11,7 @@ from typing import Literal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
+    common_parser,
     compute_metrics,
     load_best_params,
     load_yelp_data,
@@ -58,15 +53,10 @@ def extract_features(train_texts, eval_texts, max_features=20000, ngram_range=(1
 
 def train_model(X_train, y_train, n_estimators=100, max_depth=150,
                 min_samples_leaf=1,
-                max_features: Literal["sqrt", "log2"] | None = "sqrt",
+                max_features: Literal["sqrt", "log2"] = "sqrt",
                 random_state=0, single_tree=False):
     if single_tree:
-        model = DecisionTreeClassifier(
-            max_depth=max_depth,
-            min_samples_leaf=min_samples_leaf,
-            max_features=max_features,
-            random_state=random_state,
-        )
+        model = DecisionTreeClassifier(random_state=random_state)
         with timed_step("Fitting decision tree"):
             model.fit(X_train, y_train)
     else:
@@ -74,7 +64,7 @@ def train_model(X_train, y_train, n_estimators=100, max_depth=150,
             n_estimators=n_estimators,
             max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,
-            max_features=max_features or "sqrt",
+            max_features=max_features,
             n_jobs=-1,
             random_state=random_state,
             verbose=0,
@@ -107,12 +97,12 @@ def run_tuning():
 
     def objective(trial):
         # TF-IDF params
-        tfidf_features = trial.suggest_categorical("tfidf_features", [10000, 20000, 40000])
+        tfidf_features = trial.suggest_categorical("tfidf_features", [5000, 10000, 20000, 40000])
         ngram_max = trial.suggest_int("ngram_max", 1, 2)
 
         # RF params
-        n_estimators = trial.suggest_categorical("n_estimators", [50, 100, 200])
-        max_depth = trial.suggest_categorical("max_depth", [50, 100, 150])
+        n_estimators = trial.suggest_categorical("n_estimators", [100, 200, 300, 500])
+        max_depth = trial.suggest_categorical("max_depth", [50, 100, 150, 300])
         min_samples_leaf = trial.suggest_int("min_samples_leaf", 1, 10)
         max_features_choice = trial.suggest_categorical("max_features", ["sqrt", "log2"])
 
@@ -122,7 +112,8 @@ def run_tuning():
             sublinear_tf=True,
             strip_accents="unicode",
         )
-        X = vectorizer.fit_transform(train_texts)
+        with timed_step("Vectorizing TF-IDF"):
+            X = vectorizer.fit_transform(train_texts)
 
         model = RandomForestClassifier(
             n_estimators=n_estimators,
@@ -133,7 +124,8 @@ def run_tuning():
             random_state=0,
         )
 
-        scores = cross_val_score(model, X, y, cv=3, scoring="f1_macro")
+        with timed_step("Cross-validating (3-fold)"):
+            scores = cross_val_score(model, X, y, cv=3, scoring="f1_macro")
         return scores.mean()
 
     tune_model(
@@ -144,8 +136,8 @@ def run_tuning():
         model_name="Random Forest",
     )
 
-def main(single_tree=False, final=False):
-    run_start = time.time()
+def main(single_tree=False, final=False, no_save=False):
+    run_start = time.monotonic()
     model_name = "Decision Tree" if single_tree else "Random Forest"
 
     best = load_best_params(BEST_PARAMS_FILE) if not single_tree else None
@@ -168,40 +160,62 @@ def main(single_tree=False, final=False):
     assert eval_texts is not None and y_eval is not None
     print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
 
+    if best:
+        tfidf_features = best["tfidf_features"]
+        ngram_max = best["ngram_max"]
+    else:
+        tfidf_features = 20000
+        ngram_max = 2
+
     X_train, X_eval = extract_features(
         train_texts, eval_texts,
-        max_features=best.get("tfidf_features", 20000) if best else 20000,
-        ngram_range=(1, best.get("ngram_max", 2)) if best else (1, 2),
+        max_features=tfidf_features,
+        ngram_range=(1, ngram_max),
     )
     print(f"Feature matrix: {X_train.shape}")
 
-    model = train_model(
-        X_train, y_train,
-        n_estimators=best.get("n_estimators", 100) if best else 100,
-        max_depth=best.get("max_depth", 150) if best else 150,
-        min_samples_leaf=best.get("min_samples_leaf", 1) if best else 1,
-        max_features=best.get("max_features", "sqrt") if best else ("sqrt" if not single_tree else None),
-        single_tree=single_tree,
-    )
+    if single_tree:
+        model = train_model(X_train, y_train, single_tree=True)
+    else:
+        if best:
+            n_estimators = best["n_estimators"]
+            max_depth = best["max_depth"]
+            min_samples_leaf = best["min_samples_leaf"]
+            max_features = best["max_features"]
+        else:
+            n_estimators = 100
+            max_depth = 150
+            min_samples_leaf = 1
+            max_features = "sqrt"
+        model = train_model(
+            X_train, y_train,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            max_features=max_features,
+        )
 
     y_pred, metrics = evaluate(model, X_eval, y_eval, model_name=model_name)
-    cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
-    cm_path = os.path.join(SCRIPT_DIR, cm_name)
-    plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
 
-    total = time.time() - run_start
-    save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    total = time.monotonic() - run_start
+    if not no_save:
+        cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
+        cm_path = os.path.join(SCRIPT_DIR, cm_name)
+        plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+        save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    else:
+        print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--tune", action="store_true", help="Run hyperparameter tuning")
-    parser.add_argument("--final", action="store_true", help="Full training set, evaluate on test")
+    parser = common_parser()
     parser.add_argument("--single-tree", action="store_true",
                         help="Use a single Decision Tree instead of Random Forest")
     args = parser.parse_args()
 
-    if args.tune:
+    if args.tune and args.single_tree:
+        parser.error("--tune and --single-tree cannot be combined (tuning only applies to Random Forest)")
+    elif args.tune:
         run_tuning()
     else:
-        main(single_tree=args.single_tree, final=args.final)
+        main(single_tree=args.single_tree, final=args.final, no_save=args.no_save)

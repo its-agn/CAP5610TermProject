@@ -2,14 +2,8 @@
 CNN (TextCNN) on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Run modes:
-    python CNN.py                  # quick run (subsampled, val set, GloVe 42B 300d)
-    python CNN.py --glove-6b       # same but with GloVe 6B 100d (smaller/faster)
-    python CNN.py --no-glove       # same but with random embeddings
-    python CNN.py --tune           # Optuna hyperparameter tuning → tuning_log.md
-    python CNN.py --final          # full 650k train, evaluate on test set
+Usage: python CNN.py [--final] [--tune] [--no-save] [--glove-6b | --no-glove]
 """
-import argparse
 import os
 import re
 import sys
@@ -19,6 +13,7 @@ from collections import Counter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
     build_embedding_matrix,
+    common_parser,
     compute_metrics,
     load_best_params,
     load_yelp_data,
@@ -83,13 +78,11 @@ class TextCNN(nn.Module):
 
     def __init__(self, vocab_size, embed_dim=300, num_filters=100,
                  filter_sizes=(3, 4, 5), num_classes=5, dropout=0.5,
-                 pretrained_embeddings=None, freeze_embeddings=False):
+                 pretrained_embeddings=None):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
         if pretrained_embeddings is not None:
             self.embedding.weight.data.copy_(torch.from_numpy(pretrained_embeddings))
-        if freeze_embeddings:
-            self.embedding.weight.requires_grad = False
         self.convs = nn.ModuleList([
             nn.Conv1d(embed_dim, num_filters, fs) for fs in filter_sizes
         ])
@@ -110,11 +103,9 @@ class TextCNN(nn.Module):
 
 def train_model(model, train_loader, epochs=5, lr=1e-3, weight_decay=1e-4,
                 val_data=None, patience=3, grad_clip=1.0):
-    trainable = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = torch.optim.Adam(trainable, lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
-    with timed_step("Preparing model"):
-        model.to(DEVICE)
+    model.to(DEVICE)
 
     best_val_loss = float('inf')
     best_state = None
@@ -215,7 +206,6 @@ def run_tuning():
     """Tune CNN with Optuna (Bayesian optimization)."""
     with timed_step("Loading dataset"):
         all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0)
-    print(f"Device: {DEVICE}")
 
     # subsample + split once (consistent across trials)
     train_texts, _, train_labels, _ = train_test_split(
@@ -240,11 +230,12 @@ def run_tuning():
     X_val_tensor = torch.from_numpy(X_val)
 
     def objective(trial):
-        num_filters = trial.suggest_categorical("num_filters", [100, 200])
+        num_filters = trial.suggest_categorical("num_filters", [100, 200, 300])
         filter_cfg = trial.suggest_categorical("filter_sizes", ["3,4,5", "2,3,4,5"])
         filter_sizes = tuple(int(x) for x in filter_cfg.split(","))
         dropout = trial.suggest_float("dropout", 0.2, 0.6)
         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
         batch_size = trial.suggest_categorical("batch_size", [64, 128])
         epochs = trial.suggest_int("epochs", 5, 15)
 
@@ -262,12 +253,10 @@ def run_tuning():
             filter_sizes=filter_sizes,
             dropout=dropout,
             pretrained_embeddings=embed_matrix,
-            freeze_embeddings=True,
         )
 
-        print(f"Training ({epochs} epochs):")
         model = train_model(model, train_loader, epochs=epochs, lr=lr,
-                            val_data=(X_val_tensor, y_val))
+                            weight_decay=weight_decay, val_data=(X_val_tensor, y_val))
 
         _, metrics = evaluate(model, X_val_tensor, y_val, verbose=False)
         return metrics["macro_f1"]
@@ -280,7 +269,7 @@ def run_tuning():
         model_name="TextCNN",
     )
 
-def main(final=False, use_glove=True):
+def main(final=False, use_glove=True, no_save=False):
     run_start = time.monotonic()
     if not use_glove:
         model_name = "TextCNN (no GloVe)"
@@ -309,12 +298,10 @@ def main(final=False, use_glove=True):
         eval_label = "validation"
 
     assert eval_texts is not None and y_eval is not None
-    print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
-    print(f"Device: {DEVICE}")
+    print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)} | Device: {DEVICE}")
 
     with timed_step("Building vocabulary"):
         vocab = build_vocab(train_texts)
-    print(f"Vocabulary size: {len(vocab)}")
 
     with timed_step("Tokenizing texts"):
         X_train = texts_to_indices(train_texts, vocab)
@@ -323,18 +310,23 @@ def main(final=False, use_glove=True):
     embed_matrix = build_embedding_matrix(vocab, source=GLOVE_SOURCE, dim=GLOVE_DIM) if use_glove else None
     embed_dim = GLOVE_DIM if use_glove else 256
 
-    # parse filter_sizes from tuned params (stored as "3,4,5" string by Optuna)
-    if best and "filter_sizes" in best:
+    if best:
         fs = best["filter_sizes"]
         filter_sizes = tuple(int(x) for x in fs.split(",")) if isinstance(fs, str) else fs
+        num_filters = best["num_filters"]
+        dropout = best["dropout"]
+        lr = best["lr"]
+        weight_decay = best["weight_decay"]
+        epochs = best["epochs"]
+        batch_size = best["batch_size"]
     else:
         filter_sizes = (3, 4, 5)
-
-    num_filters = best.get("num_filters", 100) if best else 100
-    dropout = best.get("dropout", 0.5) if best else 0.5
-    lr = best.get("lr", 1e-3) if best else 1e-3
-    epochs = best.get("epochs", 10) if best else 10
-    batch_size = best.get("batch_size", 64) if best else 64
+        num_filters = 100
+        dropout = 0.5
+        lr = 1e-3
+        weight_decay = 1e-4
+        epochs = 10
+        batch_size = 64
 
     # Early stopping validation split (avoid using test set in --final mode)
     if final:
@@ -362,26 +354,24 @@ def main(final=False, use_glove=True):
         pretrained_embeddings=embed_matrix,
     )
 
-    embed_label = f"GloVe {GLOVE_DIM}d" if use_glove else "random embeddings"
-    print(f"Training ({epochs} epochs, {embed_label}):")
-    model = train_model(model, train_loader, epochs=epochs, lr=lr, val_data=val_data)
+    model = train_model(model, train_loader, epochs=epochs, lr=lr,
+                        weight_decay=weight_decay, val_data=val_data)
 
     X_eval_tensor = torch.from_numpy(X_eval)
     y_pred, metrics = evaluate(model, X_eval_tensor, y_eval, model_name=model_name)
-    cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
-    plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
 
     total = time.monotonic() - run_start
-    save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    if not no_save:
+        cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
+        plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+        save_results(model_name, metrics, total, RESULTS_LOG, final=final)
+    else:
+        print("Skipping save (--no-save)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 def _parse_and_run():
     global GLOVE_SOURCE, GLOVE_DIM
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--tune", action="store_true",
-                        help="Run hyperparameter tuning")
-    parser.add_argument("--final", action="store_true",
-                        help="Full training set, evaluate on test")
+    parser = common_parser()
     parser.add_argument("--no-glove", action="store_true",
                         help="Use random embeddings instead of GloVe")
     parser.add_argument("--glove-6b", action="store_true",
@@ -393,7 +383,7 @@ def _parse_and_run():
     if args.tune:
         run_tuning()
     else:
-        main(final=args.final, use_glove=not args.no_glove)
+        main(final=args.final, use_glove=not args.no_glove, no_save=args.no_save)
 
 if __name__ == "__main__":
     _parse_and_run()

@@ -18,15 +18,19 @@ def timed_step(label) -> Generator[None, None, None]:
         # prints: Fitting model...                     (12.3s)
     """
     width = max(MIN_LABEL_WIDTH, len(label) + 6)
-    padded = f"{label}...".ljust(width)
     out = sys.stdout
     start = time.monotonic()
     stop = threading.Event()
+    dot_count = [0]
+    tick_count = [0]
 
     def tick():
         while not stop.wait(0.1):
-            if stop.is_set():
-                return
+            tick_count[0] += 1
+            if tick_count[0] % 2 == 0:
+                dot_count[0] = (dot_count[0] % 3) + 1
+            dots = "." * dot_count[0]
+            padded = f"{label}{dots}".ljust(width)
             elapsed = time.monotonic() - start
             out.write(f"\r{padded} ({elapsed:.1f}s)")
             out.flush()
@@ -39,5 +43,6 @@ def timed_step(label) -> Generator[None, None, None]:
         stop.set()
         ticker.join()
         elapsed = time.monotonic() - start
+        padded = label.ljust(width)
         out.write(f"\r{padded} ({elapsed:.1f}s)\n")
         out.flush()
