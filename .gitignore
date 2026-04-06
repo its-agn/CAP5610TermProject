@@ -14,8 +14,6 @@ __pycache__/
 
 # Data (GloVe embeddings, etc.)
 data/
-*_log.md
-confusion_matrix_*
 
 # Mac garbage
 .DS_Store
