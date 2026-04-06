@@ -84,9 +84,10 @@ def main():
         train_texts, y_train, val_texts, y_val, test_texts, test_labels = load_yelp_data(train_size=args.size)
 
         #If --final is typed, swap validation for the real test set
+        final_string = None
         if args.final:
             val_texts, y_val = test_texts, test_labels
-            final_string = "(Full test set)"
+            final_string = "(full test set)"
 
 
     #Vectorize the input. We are going to scale and normalize to prevent distance distortion
@@ -112,7 +113,7 @@ def main():
         svm_model.fit(X_train_vectors, y_train)
 
     #Predict and Evaluate
-    with timed_step(f"Making predictions and evaluating {+ final_string if args.final else ""}"):
+    with timed_step(f"Making predictions and evaluating {final_string if final_string is not None else ""}"):
         y_pred = svm_model.predict(X_val_vectors)
 
         metrics = compute_metrics(y_val, y_pred)
