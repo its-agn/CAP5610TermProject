@@ -13,7 +13,9 @@ __pycache__/
 *.pyc
 
 # Data (GloVe embeddings, etc.)
-.data/
+data/
+*_log.md
+confusion_matrix_*
 
 # Mac garbage
 .DS_Store
