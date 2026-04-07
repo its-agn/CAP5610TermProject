@@ -1,7 +1,6 @@
 """GloVe embedding loading utilities."""
 
 import os
-import sys
 import zipfile
 import urllib.request
 
@@ -30,16 +29,16 @@ def _download(url, dest):
     """Download a file with progress indicator."""
     size_mb = "~2GB" if "42B" in url else "~862MB"
     label = f"Downloading {os.path.basename(dest)} ({size_mb})"
+    status = ["  0%"]
     def progress(count, block_size, total_size):
         if total_size > 0:
             pct = min(100, count * block_size * 100 // total_size)
-            sys.stdout.write(f"\r{label}... {pct}%")
+            status[0] = f"{pct:3d}%"
         else:
             mb = count * block_size / 1_000_000
-            sys.stdout.write(f"\r{label}... {mb:.0f}MB")
-        sys.stdout.flush()
-    urllib.request.urlretrieve(url, dest, progress)
-    print()
+            status[0] = f"{mb:.0f}MB"
+    with timed_step(label, suffix=lambda: status[0]):
+        urllib.request.urlretrieve(url, dest, progress)
 
 def _ensure_glove_file(source="42B", dim=300):
     """Download and extract GloVe if needed. Returns path to the text file."""
@@ -54,9 +53,9 @@ def _ensure_glove_file(source="42B", dim=300):
     archive_path = os.path.join(DATA_DIR, src["file"])
     if not os.path.exists(archive_path):
         _download(src["url"], archive_path)
-    print(f"Extracting {filename}...")
-    with zipfile.ZipFile(archive_path) as zf:
-        zf.extract(filename, DATA_DIR)
+    with timed_step(f"Extracting {filename}"):
+        with zipfile.ZipFile(archive_path) as zf:
+            zf.extract(filename, DATA_DIR)
     return filepath
 
 def build_embedding_matrix(vocab, source="42B", dim=300):

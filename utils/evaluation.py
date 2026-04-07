@@ -5,6 +5,7 @@ import platform
 from datetime import datetime
 
 from .data import LABEL_NAMES
+from .timer import timed_step
 
 def _get_cpu_name():
     """Get the CPU model name."""
@@ -57,15 +58,28 @@ def get_device_name(cpu_only=False):
             pass
     return _get_cpu_name()
 
+def print_run_header(title, mode=None, device=None, seed=None, extra_info=None):
+    """Print a consistent header for training and tuning runs."""
+    print("=" * 60)
+    print(title if mode is None else f"{title} - {mode.title()} Run")
+    print("=" * 60)
+    if device is not None:
+        print(f"Device: {device}")
+    if seed is not None:
+        print(f"Seed:   {seed}")
+    if extra_info:
+        for key, value in extra_info.items():
+            print(f"{key}: {value}")
+
 def compute_metrics(y_true, y_pred):
     """Compute standard multi-class classification metrics."""
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
     return {
         "accuracy": accuracy_score(y_true, y_pred),
-        "macro_precision": precision_score(y_true, y_pred, average="macro"),
-        "macro_recall": recall_score(y_true, y_pred, average="macro"),
-        "macro_f1": f1_score(y_true, y_pred, average="macro"),
+        "macro_precision": precision_score(y_true, y_pred, average="macro", zero_division=0),
+        "macro_recall": recall_score(y_true, y_pred, average="macro", zero_division=0),
+        "macro_f1": f1_score(y_true, y_pred, average="macro", zero_division=0),
     }
 
 def print_metrics(metrics, model_name, y_true=None, y_pred=None):
@@ -81,41 +95,92 @@ def print_metrics(metrics, model_name, y_true=None, y_pred=None):
     print(f"Macro F1-Score:  {metrics['macro_f1']:.4f}")
     print()
     if y_true is not None and y_pred is not None:
-        print(classification_report(y_true, y_pred, target_names=LABEL_NAMES))
+        print(classification_report(y_true, y_pred, target_names=LABEL_NAMES, zero_division=0))
 
-def plot_confusion_matrix(y_true, y_pred, save_path, model_name):
+def plot_confusion_matrix(y_true, y_pred, save_path, model_name, title_suffix=None):
     """Save a confusion matrix heatmap to disk."""
     from sklearn.metrics import confusion_matrix
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-    cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=LABEL_NAMES, yticklabels=LABEL_NAMES)
-    plt.xlabel("Predicted")
-    plt.ylabel("True")
-    plt.title(f"Confusion Matrix - {model_name} - {date}")
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
+    with timed_step(f"Saving confusion matrix ({os.path.basename(save_path)})"):
+        date = datetime.now().strftime("%Y-%m-%d %H:%M")
+        cm = confusion_matrix(y_true, y_pred)
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                    xticklabels=LABEL_NAMES, yticklabels=LABEL_NAMES)
+        plt.xlabel("Predicted")
+        plt.ylabel("True")
+        title = model_name
+        if title_suffix:
+            title += f" | {title_suffix}"
+        title += f" | {date}"
+        plt.title(title)
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150)
+        plt.close()
     print(f"Confusion matrix saved to {save_path}")
 
+def _result_section_name(model_name, final=False, default_params: bool | None = False):
+    """Return the results_log.md section header for a given run configuration."""
+    mode = "final" if final else "validation"
+    if default_params is None:
+        return f"{model_name} ({mode})"
+    params_tag = "default params" if default_params else "best params"
+    return f"{model_name} ({mode}, {params_tag})"
+
+def _get_logged_macro_f1(log_path, section):
+    """Read the existing Macro F1 for a section, if present."""
+    if not os.path.exists(log_path):
+        return None
+
+    in_section = False
+    with open(log_path) as f:
+        for raw_line in f:
+            line = raw_line.rstrip("\n")
+            if line.startswith("## "):
+                in_section = line[3:] == section
+                continue
+            if in_section and line.startswith("- **Macro F1:** "):
+                try:
+                    return float(line.split(": ", 1)[1])
+                except ValueError:
+                    return None
+    return None
+
+def _should_update_result(log_path, model_name, new_macro_f1, final=False,
+                          default_params: bool | None = False):
+    """Return whether a run should overwrite the saved result for its section."""
+    section = _result_section_name(
+        model_name,
+        final=final,
+        default_params=default_params,
+    )
+    old_macro_f1 = _get_logged_macro_f1(log_path, section)
+    return old_macro_f1 is None or new_macro_f1 >= old_macro_f1, section, old_macro_f1
+
 def save_results(model_name, metrics, elapsed, log_path, final=False, device=None,
-                 default_params=False, params=None):
+                 default_params: bool | None = False, params=None, extra_info=None):
     """Update a results_log.md with the latest run for this model.
 
     Each model/mode combo (e.g. "Random Forest (final)") gets its own section.
     Running again overwrites that section with new results.
     Pass default_params=None to omit the params tag (e.g. for Decision Tree).
     """
-    mode = "final" if final else "validation"
-    if default_params is None:
-        section = f"{model_name} ({mode})"
-    else:
-        params_tag = "default params" if default_params else "best params"
-        section = f"{model_name} ({mode}, {params_tag})"
+    should_update, section, old_macro_f1 = _should_update_result(
+        log_path,
+        model_name,
+        metrics["macro_f1"],
+        final=final,
+        default_params=default_params,
+    )
+    if not should_update:
+        print(
+            f"Keeping existing results for '{section}' "
+            f"({old_macro_f1:.4f} > {metrics['macro_f1']:.4f})"
+        )
+        return False
+
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
     if device is None:
         device = get_device_name()
@@ -129,6 +194,9 @@ def save_results(model_name, metrics, elapsed, log_path, final=False, device=Non
         f"- **Macro F1:** {metrics['macro_f1']:.4f}",
         f"- **Time:** {elapsed:.1f}s ({elapsed/60:.1f}m)",
     ]
+    if extra_info:
+        for key, value in extra_info.items():
+            new_lines.append(f"- **{key}:** {value}")
     if params:
         new_lines.append("")
         new_lines.append("<details>")
@@ -139,29 +207,31 @@ def save_results(model_name, metrics, elapsed, log_path, final=False, device=Non
         new_lines.append("")
         new_lines.append("</details>")
 
-    existing: dict[str, list[str]] = {}
-    if os.path.exists(log_path):
-        with open(log_path) as f:
-            current_key = None
-            for line in f:
-                line = line.rstrip("\n")
-                if line.startswith("## "):
-                    current_key = line[3:]
-                    existing[current_key] = []
-                elif current_key is not None:
-                    existing[current_key].append(line)
+    with timed_step(f"Writing results log ({os.path.basename(log_path)})"):
+        existing: dict[str, list[str]] = {}
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                current_key = None
+                for line in f:
+                    line = line.rstrip("\n")
+                    if line.startswith("## "):
+                        current_key = line[3:]
+                        existing[current_key] = []
+                    elif current_key is not None:
+                        existing[current_key].append(line)
 
-    for key in existing:
-        while existing[key] and existing[key][-1] == "":
-            existing[key].pop()
+        for key in existing:
+            while existing[key] and existing[key][-1] == "":
+                existing[key].pop()
 
-    existing[section] = new_lines
+        existing[section] = new_lines
 
-    with open(log_path, "w") as f:
-        f.write("# Results Log\n")
-        for key, lines in existing.items():
-            f.write(f"\n## {key}\n")
-            for line in lines:
-                f.write(f"{line}\n")
+        with open(log_path, "w") as f:
+            f.write("# Results Log\n")
+            for key, lines in existing.items():
+                f.write(f"\n## {key}\n")
+                for line in lines:
+                    f.write(f"{line}\n")
 
     print(f"Results saved to {log_path}")
+    return True

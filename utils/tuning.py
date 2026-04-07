@@ -14,6 +14,7 @@ def tune_model(
     model_name: str = "Model",
     cpu_only: bool = False,
     extra_info: dict | None = None,
+    seed: int = 0,
 ):
     """Run Optuna hyperparameter optimization.
 
@@ -27,13 +28,20 @@ def tune_model(
         model_name: name for the tuning log header.
 
     Returns:
-        dict with "best_params", "best_score", and "all_results"
+        dict with "best_params", "best_score", "best_user_attrs", and "all_results"
     """
     import optuna
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    study = optuna.create_study(direction="maximize")
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=optuna.samplers.TPESampler(seed=seed),
+    )
+
+    log_info = {"Seed": seed}
+    if extra_info:
+        log_info.update(extra_info)
 
     trial_count = [0]
 
@@ -50,7 +58,7 @@ def tune_model(
         score = objective(trial)
         elapsed = time.monotonic() - start
         best_so_far = max(score, study.best_value) if trial_count[0] > 1 else score
-        print(f"  F1: {score:.4f} | Best: {best_so_far:.4f} | {elapsed:.0f}s")
+        print(f"  Macro F1: {score:.4f} | Best: {best_so_far:.4f} | {elapsed:.0f}s")
         print("  " + "  ".join(f"{k}={_fmt_val(v)}" for k, v in trial.params.items()))
         print("-" * 60)
         return score
@@ -59,7 +67,13 @@ def tune_model(
         if _trial.state != optuna.trial.TrialState.COMPLETE:
             return
         if log_path:
-            write_tuning_log(_study_to_results(_study), log_path, model_name=model_name, cpu_only=cpu_only, extra_info=extra_info)
+            write_tuning_log(
+                _study_to_results(_study),
+                log_path,
+                model_name=model_name,
+                cpu_only=cpu_only,
+                extra_info=log_info,
+            )
 
     tuning_start = time.monotonic()
     study.optimize(timed_objective, n_trials=n_trials, callbacks=[callback])
@@ -68,7 +82,7 @@ def tune_model(
     results = _study_to_results(study)
 
     print(f"\n{'='*60}")
-    print(f"Overall best F1: {results['best_score']:.4f}")
+    print(f"Overall best Macro F1: {results['best_score']:.4f}")
     print("Best params:")
     for k, v in results["best_params"].items():
         print(f"  {k}: {_fmt_val(v)}")
@@ -76,7 +90,14 @@ def tune_model(
     print("=" * 60)
 
     if log_path:
-        write_tuning_log(results, log_path, model_name=model_name, cpu_only=cpu_only, total_time=total_time, extra_info=extra_info)
+        write_tuning_log(
+            results,
+            log_path,
+            model_name=model_name,
+            cpu_only=cpu_only,
+            total_time=total_time,
+            extra_info=log_info,
+        )
         print(f"Tuning log saved to {log_path}")
     if best_params_path:
         save_best_params(results["best_params"], best_params_path, score=results["best_score"])
@@ -100,19 +121,20 @@ def _study_to_results(study):
     return {
         "best_params": study.best_params,
         "best_score": study.best_value,
+        "best_user_attrs": dict(study.best_trial.user_attrs),
         "all_results": all_results,
     }
 
 def save_best_params(params, path, score=None, metadata=None):
     """Save best params dict to JSON. Converts tuples to lists for serialization.
-    If score is provided, only overwrites if the new score beats the existing one.
+    If score is provided, only keeps the existing file when it is strictly better.
     """
     if score is not None and os.path.exists(path):
         with open(path) as f:
             existing = json.load(f)
         old_score = existing.get("metadata", {}).get("f1_score")
-        if old_score is not None and score <= old_score:
-            print(f"Keeping existing best params ({old_score:.4f} >= {score:.4f})")
+        if old_score is not None and score < old_score:
+            print(f"Keeping existing best params ({old_score:.4f} > {score:.4f})")
             return
 
     serializable = {}

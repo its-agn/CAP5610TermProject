@@ -9,7 +9,7 @@ from collections.abc import Generator
 MIN_LABEL_WIDTH = 40
 
 @contextlib.contextmanager
-def timed_step(label) -> Generator[None, None, None]:
+def timed_step(label, suffix=None) -> Generator[None, None, None]:
     """Print a label with a live updating elapsed timer.
 
     Usage:
@@ -24,16 +24,21 @@ def timed_step(label) -> Generator[None, None, None]:
     dot_count = [0]
     tick_count = [0]
 
+    def render(final=False):
+        dots = "" if final else "." * dot_count[0]
+        padded = f"{label}{dots}".ljust(width)
+        elapsed = time.monotonic() - start
+        suffix_str = f" {suffix()}" if suffix else ""
+        end = "\n" if final else ""
+        out.write(f"\r{padded}{suffix_str} ({elapsed:.1f}s){end}")
+        out.flush()
+
     def tick():
         while not stop.wait(0.1):
             tick_count[0] += 1
             if tick_count[0] % 2 == 0:
                 dot_count[0] = (dot_count[0] % 3) + 1
-            dots = "." * dot_count[0]
-            padded = f"{label}{dots}".ljust(width)
-            elapsed = time.monotonic() - start
-            out.write(f"\r{padded} ({elapsed:.1f}s)")
-            out.flush()
+            render()
 
     ticker = threading.Thread(target=tick, daemon=True)
     ticker.start()
@@ -42,7 +47,4 @@ def timed_step(label) -> Generator[None, None, None]:
     finally:
         stop.set()
         ticker.join()
-        elapsed = time.monotonic() - start
-        padded = label.ljust(width)
-        out.write(f"\r{padded} ({elapsed:.1f}s)\n")
-        out.flush()
+        render(final=True)
