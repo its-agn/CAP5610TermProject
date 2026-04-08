@@ -2,7 +2,7 @@
 CNN (TextCNN) on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Usage: python CNN.py [common flags] [--glove-6b | --no-glove]
+Usage: python CNN.py [common flags] [--glove-6b-300d | --glove-6b-100d | --glove-42b | --glove-2024-wikigiga | --fasttext-wiki-subword]
 """
 import os
 import re
@@ -12,57 +12,121 @@ from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
+    DEFAULT_SEED,
     build_embedding_matrix,
     common_parser,
     compute_metrics,
-    load_best_params,
+    embedding_display_name,
+    get_device_name,
+    load_best_config,
     load_yelp_data,
     plot_confusion_matrix,
     print_metrics,
-    save_best_params,
+    print_run_header,
+    print_value_section,
+    save_best_config,
     save_results,
+    set_random_seed,
     timed_step,
     tune_model,
 )
 
-GLOVE_SOURCE = "42B"
-GLOVE_DIM = 300
+EMBEDDING_SOURCE = "6B"
+EMBEDDING_DIM = 300
+USE_PRETRAINED_EMBEDDINGS = False
+TUNING_TRAIN_SIZE = 650000
+TUNING_VAL_SPLIT = 0.1
+TUNING_TRIALS = 30
+
+def parse_args():
+    """Parse CLI args and configure embedding globals."""
+    global USE_PRETRAINED_EMBEDDINGS, EMBEDDING_SOURCE, EMBEDDING_DIM
+    parser = common_parser()
+    parser.add_argument("--glove-6b-300d", action="store_true",
+                        help="Use GloVe 6B 300d instead of the default random embeddings")
+    parser.add_argument("--glove-42b", action="store_true",
+                        help="Use GloVe 42B 300d instead of the default random embeddings")
+    parser.add_argument("--glove-6b-100d", action="store_true",
+                        help="Use GloVe 6B 100d instead of the default random embeddings")
+    parser.add_argument("--glove-2024-wikigiga", action="store_true",
+                        help="Use GloVe 2024 WikiGigaword 300d instead of the default random embeddings")
+    parser.add_argument("--fasttext-wiki-subword", action="store_true",
+                        help="Use fastText wiki-news subword 300d instead of the default random embeddings")
+    args = parser.parse_args()
+    if args.tune and (args.final or args.default):
+        parser.error("--tune cannot be combined with --final or --default")
+    if sum(bool(x) for x in (
+        args.glove_6b_300d,
+        args.glove_42b,
+        args.glove_6b_100d,
+        args.glove_2024_wikigiga,
+        args.fasttext_wiki_subword,
+    )) > 1:
+        parser.error(
+            "--glove-6b-300d, --glove-42b, --glove-6b-100d, "
+            "--glove-2024-wikigiga, and --fasttext-wiki-subword are mutually exclusive"
+        )
+    if args.glove_6b_300d:
+        USE_PRETRAINED_EMBEDDINGS = True
+        EMBEDDING_SOURCE = "6B"
+        EMBEDDING_DIM = 300
+    elif args.glove_42b:
+        USE_PRETRAINED_EMBEDDINGS = True
+        EMBEDDING_SOURCE = "42B"
+        EMBEDDING_DIM = 300
+    elif args.glove_6b_100d:
+        USE_PRETRAINED_EMBEDDINGS = True
+        EMBEDDING_SOURCE = "6B"
+        EMBEDDING_DIM = 100
+    elif args.glove_2024_wikigiga:
+        USE_PRETRAINED_EMBEDDINGS = True
+        EMBEDDING_SOURCE = "2024WG"
+        EMBEDDING_DIM = 300
+    elif args.fasttext_wiki_subword:
+        USE_PRETRAINED_EMBEDDINGS = True
+        EMBEDDING_SOURCE = "FT-WIKI-SUBWORD"
+        EMBEDDING_DIM = 300
+    return args
 
 if __name__ == "__main__":
-    parser = common_parser()
-    parser.add_argument("--no-glove", action="store_true",
-                        help="Use random embeddings instead of GloVe")
-    parser.add_argument("--glove-6b", action="store_true",
-                        help="Use GloVe 6B 100d instead of 42B 300d")
-    args = parser.parse_args()
-    if args.tune and (args.final or args.default_params or args.no_glove):
-        parser.error("--tune cannot be combined with --final, --default-params, or --no-glove")
-    if args.no_glove and args.glove_6b:
-        parser.error("--no-glove and --glove-6b cannot be combined")
-    if args.glove_6b:
-        GLOVE_SOURCE = "6B"
-        GLOVE_DIM = 100
+    args = parse_args()
 
 with timed_step("Loading libraries"):
     import numpy as np
     import torch
     import torch.nn as nn
     from torch.utils.data import DataLoader, TensorDataset
-    from sklearn.model_selection import train_test_split
-
-import logging
-logging.getLogger("huggingface_hub.utils._http").setLevel(logging.CRITICAL)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TUNING_LOG = os.path.join(SCRIPT_DIR, "tuning_log.md")
 RESULTS_LOG = os.path.join(SCRIPT_DIR, "results_log.md")
-BEST_PARAMS_FILE = os.path.join(SCRIPT_DIR, "best_params.json")
+BEST_CONFIG_FILE = os.path.join(SCRIPT_DIR, "best_config.json")
 
 DEVICE = (
     torch.device("mps") if torch.backends.mps.is_available()
     else torch.device("cuda") if torch.cuda.is_available()
     else torch.device("cpu")
 )
+
+def current_embedding_name():
+    """Return the current embedding display name."""
+    return embedding_display_name(EMBEDDING_SOURCE, EMBEDDING_DIM)
+
+def current_embedding_label():
+    """Return the current embedding label or Random when none is selected."""
+    return current_embedding_name() if USE_PRETRAINED_EMBEDDINGS else "Random"
+
+def current_embedding_results_label():
+    """Return the result-log label for the active embedding setup."""
+    return current_embedding_name() if USE_PRETRAINED_EMBEDDINGS else "Random embeddings"
+
+def current_embedding_metadata():
+    """Return metadata for the currently selected embedding setup."""
+    return {
+        "embedding_source": EMBEDDING_SOURCE if USE_PRETRAINED_EMBEDDINGS else "random",
+        "embedding_dim": EMBEDDING_DIM if USE_PRETRAINED_EMBEDDINGS else 256,
+        "seed": DEFAULT_SEED,
+    }
 
 _PUNCT_RE = re.compile(r'[^\w\s]')
 
@@ -126,6 +190,7 @@ def train_model(model, train_loader, epochs=5, lr=1e-3,
 
     best_val_loss = float('inf')
     best_state = None
+    best_epoch = epochs
     epochs_no_improve = 0
 
     if val_data is not None:
@@ -187,12 +252,14 @@ def train_model(model, train_loader, epochs=5, lr=1e-3,
             if val_avg < best_val_loss:
                 best_val_loss = val_avg
                 best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                best_epoch = epoch + 1
                 epochs_no_improve = 0
             else:
                 epochs_no_improve += 1
                 if epochs_no_improve >= patience:
-                    print(f"{indent}Early stopping at epoch {epoch+1} "
-                          f"(no val improvement for {patience} epochs)")
+                    if epoch + 1 < epochs:
+                        print(f"{indent}Early stopping at epoch {epoch+1} "
+                              f"(no val improvement for {patience} epochs)")
                     break
         else:
             print(f"\r{indent}Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f} - "
@@ -200,18 +267,19 @@ def train_model(model, train_loader, epochs=5, lr=1e-3,
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    return model
+    return model, best_epoch
 
-def evaluate(model, X_eval_tensor, y_eval, verbose=True, model_name="TextCNN"):
+def evaluate(model, X_eval_tensor, y_eval, verbose=True, model_name="TextCNN", indent=""):
     """Run inference and compute evaluation metrics."""
     model.eval()
     all_preds = []
     loader = DataLoader(TensorDataset(X_eval_tensor), batch_size=512, shuffle=False)
-    with torch.no_grad():
-        for (batch_X,) in loader:
-            batch_X = batch_X.to(DEVICE)
-            out = model(batch_X)
-            all_preds.append(out.argmax(dim=1).cpu().numpy())
+    with timed_step(f"{indent}Running inference"):
+        with torch.no_grad():
+            for (batch_X,) in loader:
+                batch_X = batch_X.to(DEVICE)
+                out = model(batch_X)
+                all_preds.append(out.argmax(dim=1).cpu().numpy())
     y_pred = np.concatenate(all_preds)
 
     metrics = compute_metrics(y_eval, y_pred)
@@ -219,22 +287,30 @@ def evaluate(model, X_eval_tensor, y_eval, verbose=True, model_name="TextCNN"):
         print_metrics(metrics, model_name, y_eval, y_pred)
     return y_pred, metrics
 
-def run_tuning(no_save=False):
+def run_tuning(discard=False):
     """Tune CNN with Optuna (Bayesian optimization)."""
-    with timed_step("Loading dataset"):
-        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0, skip_test=True)
+    set_random_seed(DEFAULT_SEED)
+    print_run_header(
+        "TextCNN",
+        mode="tuning",
+        device=get_device_name(),
+        extra_info={
+            "Embeddings": current_embedding_label(),
+            "Dataset": f"{TUNING_TRAIN_SIZE} train ({int(TUNING_VAL_SPLIT * 100)}% val split)",
+            "Trials": TUNING_TRIALS,
+        },
+    )
 
-    # subsample + split once (consistent across trials)
-    train_texts, _, train_labels, _ = train_test_split(
-        all_texts, list(all_labels),
-        train_size=150000, stratify=all_labels, random_state=0,
-    )
-    train_texts, val_texts, train_labels, val_labels = train_test_split(
-        train_texts, train_labels,
-        test_size=0.1, stratify=train_labels, random_state=0,
-    )
-    y_train = np.array(train_labels)
-    y_val = np.array(val_labels)
+    with timed_step("Loading dataset"):
+        train_texts, y_train, val_texts, y_val, _, _ = load_yelp_data(
+            train_size=TUNING_TRAIN_SIZE,
+            val_split=TUNING_VAL_SPLIT,
+            skip_test=True,
+            seed=DEFAULT_SEED,
+        )
+    assert val_texts is not None and y_val is not None
+    y_train = np.array(y_train)
+    y_val = np.array(y_val)
 
     with timed_step("Building vocabulary"):
         vocab = build_vocab(train_texts)
@@ -243,17 +319,21 @@ def run_tuning(no_save=False):
         X_train = texts_to_indices(train_texts, vocab)
         X_val = texts_to_indices(val_texts, vocab)
 
-    embed_matrix = build_embedding_matrix(vocab, source=GLOVE_SOURCE, dim=GLOVE_DIM)
+    embed_matrix = (
+        build_embedding_matrix(vocab, source=EMBEDDING_SOURCE, dim=EMBEDDING_DIM)
+        if USE_PRETRAINED_EMBEDDINGS else None
+    )
     X_val_tensor = torch.from_numpy(X_val)
 
     def objective(trial):
-        num_filters = trial.suggest_categorical("num_filters", [100, 200, 300])
-        filter_cfg = trial.suggest_categorical("filter_sizes", ["3,4,5", "2,3,4,5"])
+        set_random_seed(DEFAULT_SEED)
+        num_filters = trial.suggest_categorical("num_filters", [200, 300])
+        filter_cfg = trial.suggest_categorical("filter_sizes", ["2,3,4,5"])
         filter_sizes = tuple(int(x) for x in filter_cfg.split(","))
-        dropout = trial.suggest_float("dropout", 0.2, 0.6)
-        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        dropout = trial.suggest_float("dropout", 0.18, 0.5)
+        lr = trial.suggest_float("lr", 1e-4, 6e-4, log=True)
         batch_size = trial.suggest_categorical("batch_size", [64, 128])
-        epochs = trial.suggest_int("epochs", 5, 15)
+        epochs = trial.suggest_int("epochs", 5, 10)
 
         train_dataset = TensorDataset(
             torch.from_numpy(X_train), torch.from_numpy(y_train),
@@ -264,77 +344,108 @@ def run_tuning(no_save=False):
 
         model = TextCNN(
             vocab_size=len(vocab),
-            embed_dim=GLOVE_DIM,
+            embed_dim=EMBEDDING_DIM if USE_PRETRAINED_EMBEDDINGS else 256,
             num_filters=num_filters,
             filter_sizes=filter_sizes,
             dropout=dropout,
             pretrained_embeddings=embed_matrix,
         )
 
-        model = train_model(model, train_loader, epochs=epochs, lr=lr,
-                            val_data=(X_val_tensor, y_val), indent="  ")
+        model, best_epoch = train_model(
+            model,
+            train_loader,
+            epochs=epochs,
+            lr=lr,
+            val_data=(X_val_tensor, y_val),
+            indent="  ",
+        )
+        trial.set_user_attr("best_epoch", best_epoch)
 
-        _, metrics = evaluate(model, X_val_tensor, y_val, verbose=False)
+        _, metrics = evaluate(model, X_val_tensor, y_val, verbose=False, indent="  ")
         return metrics["macro_f1"]
 
     results = tune_model(
         objective,
-        n_trials=30,
-        log_path=None if no_save else TUNING_LOG,
-        best_params_path=None,
+        n_trials=TUNING_TRIALS,
+        log_path=None if discard else TUNING_LOG,
         model_name="TextCNN",
-        extra_info={"Embeddings": f"GloVe {GLOVE_SOURCE} {GLOVE_DIM}d"},
+        extra_info={
+            "Embeddings": current_embedding_label(),
+            "Dataset": f"{TUNING_TRAIN_SIZE} train ({int(TUNING_VAL_SPLIT * 100)}% val split)",
+            "Trials": TUNING_TRIALS,
+        },
+        seed=DEFAULT_SEED,
     )
-    if not no_save:
-        save_best_params(
-            results["best_params"], BEST_PARAMS_FILE,
-            score=results["best_score"],
-            metadata={"glove_source": GLOVE_SOURCE, "glove_dim": GLOVE_DIM},
+    if not discard:
+        best_config = dict(results["best_config"])
+        best_epoch = results["best_user_attrs"].get("best_epoch")
+        if best_epoch is not None:
+            best_config["epochs"] = best_epoch
+        save_best_config(
+            best_config, BEST_CONFIG_FILE,
+            metadata={
+                "embedding_source": EMBEDDING_SOURCE if USE_PRETRAINED_EMBEDDINGS else "random",
+                "embedding_dim": EMBEDDING_DIM if USE_PRETRAINED_EMBEDDINGS else 256,
+                "seed": DEFAULT_SEED,
+                "tuning_train_size": len(train_texts) + len(val_texts),
+                "tuning_val_split": TUNING_VAL_SPLIT,
+                "tuning_trials": TUNING_TRIALS,
+            },
+            macro_f1=results["best_score"],
         )
 
-def main(final=False, use_glove=True, no_save=False, default_params=False):
+def main(final=False, use_glove=True, discard=False, default_config=False):
+    set_random_seed(DEFAULT_SEED)
     run_start = time.monotonic()
-    if not use_glove:
-        model_name = "TextCNN (no GloVe)"
-    else:
-        model_name = f"TextCNN (GloVe {GLOVE_SOURCE} {GLOVE_DIM}d)"
+    model_name = "TextCNN"
 
     DEFAULT_PARAMS = {
         "num_filters": 100, "filter_sizes": "3,4,5", "dropout": 0.5,
         "lr": 1e-3, "batch_size": 64, "epochs": 10,
     }
 
-    params, metadata = (None, {}) if default_params else load_best_params(BEST_PARAMS_FILE)
+    params, metadata = (None, {}) if default_config else load_best_config(BEST_CONFIG_FILE)
     using_defaults = params is None
     if not using_defaults:
-        saved_source = metadata.get("glove_source")
-        saved_dim = metadata.get("glove_dim")
-        if saved_source and use_glove and (saved_source != GLOVE_SOURCE or saved_dim != GLOVE_DIM):
-            sys.exit(f"Error: best params were tuned with GloVe {saved_source} {saved_dim}d "
-                     f"but running with GloVe {GLOVE_SOURCE} {GLOVE_DIM}d. "
-                     f"Use --default-params to ignore best params.")
-        elif saved_source and not use_glove:
-            sys.exit(f"Error: best params were tuned with GloVe {saved_source} {saved_dim}d "
-                     f"but running without GloVe (--no-glove). "
-                     f"Use --default-params to ignore best params.")
+        saved_source = metadata.get("embedding_source")
+        saved_dim = metadata.get("embedding_dim")
+        if saved_source is not None and saved_dim is not None and use_glove and (
+            saved_source != EMBEDDING_SOURCE or saved_dim != EMBEDDING_DIM
+        ):
+            sys.exit(f"Error: best config was tuned with {embedding_display_name(saved_source, saved_dim)} "
+                     f"but running with {current_embedding_name()}. "
+                     f"Use --default to ignore best config.")
+        elif saved_source is not None and saved_dim is not None and not use_glove:
+            sys.exit(f"Error: best config was tuned with {embedding_display_name(saved_source, saved_dim)} "
+                     f"but running with random embeddings. "
+                     f"Use --default to ignore best config.")
     if using_defaults:
         params = DEFAULT_PARAMS
-        print("Using default params:")
+        params_source = "default config"
     else:
-        print("Using best tuned params (from best_params.json):")
-    for k, v in params.items():
-        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+        params_source = "best tuned config"
+    print_run_header(
+        model_name,
+        mode="final" if final else "validation",
+        device=get_device_name(),
+        extra_info={
+            "Embeddings": "Random" if not use_glove else current_embedding_name(),
+            "Config source": params_source,
+        },
+    )
+    print_value_section("Parameters", params)
 
     if final:
         with timed_step("Loading full dataset (650k, no subsampling)"):
             train_texts, y_train, _, _, eval_texts, y_eval = load_yelp_data(
-                train_size=None, val_split=0,
+                train_size=None, val_split=0, seed=DEFAULT_SEED,
             )
         eval_label = "TEST"
     else:
         with timed_step("Loading dataset (subsampled to 150k)"):
             train_texts, y_train, eval_texts, y_eval, _, _ = load_yelp_data(
                 train_size=150000,
+                seed=DEFAULT_SEED,
             )
         eval_label = "validation"
 
@@ -348,8 +459,8 @@ def main(final=False, use_glove=True, no_save=False, default_params=False):
         X_train = texts_to_indices(train_texts, vocab)
         X_eval = texts_to_indices(eval_texts, vocab)
 
-    embed_matrix = build_embedding_matrix(vocab, source=GLOVE_SOURCE, dim=GLOVE_DIM) if use_glove else None
-    embed_dim = GLOVE_DIM if use_glove else 256
+    embed_matrix = build_embedding_matrix(vocab, source=EMBEDDING_SOURCE, dim=EMBEDDING_DIM) if use_glove else None
+    embed_dim = EMBEDDING_DIM if use_glove else 256
 
     fs = params["filter_sizes"]
     filter_sizes = tuple(int(x) for x in fs.split(",")) if isinstance(fs, str) else fs
@@ -359,15 +470,8 @@ def main(final=False, use_glove=True, no_save=False, default_params=False):
     epochs = params["epochs"]
     batch_size = params["batch_size"]
 
-    # Early stopping validation split (avoid using test set in --final mode)
     if final:
-        n_val = int(len(X_train) * 0.05)
-        perm = np.random.RandomState(42).permutation(len(X_train))
-        es_X = torch.from_numpy(X_train[perm[:n_val]])
-        es_y = y_train[perm[:n_val]]
-        X_train = X_train[perm[n_val:]]
-        y_train = y_train[perm[n_val:]]
-        val_data = (es_X, es_y)
+        val_data = None
     else:
         val_data = (torch.from_numpy(X_eval), y_eval)
 
@@ -386,26 +490,43 @@ def main(final=False, use_glove=True, no_save=False, default_params=False):
     )
     print(f"Model params: {sum(p.numel() for p in model.parameters()):,}")
 
-    model = train_model(model, train_loader, epochs=epochs, lr=lr,
-                        val_data=val_data)
+    model, _ = train_model(model, train_loader, epochs=epochs, lr=lr,
+                           val_data=val_data)
 
     X_eval_tensor = torch.from_numpy(X_eval)
     y_pred, metrics = evaluate(model, X_eval_tensor, y_eval, model_name=model_name)
 
     total = time.monotonic() - run_start
-    if not no_save:
-        if final and not default_params:
+    if not discard:
+        saved = save_results(
+            model_name,
+            metrics,
+            total,
+            RESULTS_LOG,
+            final=final,
+            default_config=using_defaults,
+            params=params,
+            metadata=(current_embedding_metadata() if using_defaults else metadata),
+            results_name=f"{model_name} | {current_embedding_results_label()}",
+        )
+        if final and not default_config and saved:
             cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_cnn.png")
-            plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
-        save_results(model_name, metrics, total, RESULTS_LOG, final=final,
-                     default_params=using_defaults, params=params)
+            plot_confusion_matrix(
+                y_eval,
+                y_pred,
+                cm_path,
+                model_name,
+                title_suffix=f"Macro F1={metrics['macro_f1']:.4f}",
+            )
+        elif final and not default_config:
+            print("Keeping existing confusion matrix because results were not updated")
     else:
-        print("Skipping save (--no-save)")
+        print("Skipping save (--discard)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 if __name__ == "__main__":
     if args.tune:
-        run_tuning(no_save=args.no_save)
+        run_tuning(discard=args.discard)
     else:
-        main(final=args.final, use_glove=not args.no_glove, no_save=args.no_save,
-             default_params=args.default_params)
+        main(final=args.final, use_glove=USE_PRETRAINED_EMBEDDINGS, discard=args.discard,
+             default_config=args.default)

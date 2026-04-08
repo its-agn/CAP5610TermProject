@@ -1,0 +1,19 @@
+{
+  "params": {
+    "num_filters": 300,
+    "filter_sizes": "2,3,4,5",
+    "dropout": 0.3454305242971086,
+    "lr": 0.0003414059395182117,
+    "batch_size": 128,
+    "epochs": 3
+  },
+  "metadata": {
+    "embedding_source": "2024WG",
+    "embedding_dim": 300,
+    "seed": 0,
+    "tuning_train_size": 650000,
+    "tuning_val_split": 0.1,
+    "tuning_trials": 30
+  },
+  "macro_f1": 0.6440378554002448
+}
