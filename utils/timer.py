@@ -6,7 +6,9 @@ import threading
 import time
 from collections.abc import Generator
 
-MIN_LABEL_WIDTH = 40
+LINE_WIDTH = 64
+MIN_LABEL_WIDTH = 24
+TICK_INTERVAL = 0.1
 
 @contextlib.contextmanager
 def timed_step(label, suffix=None) -> Generator[None, None, None]:
@@ -17,7 +19,6 @@ def timed_step(label, suffix=None) -> Generator[None, None, None]:
             model.fit(X, y)
         # prints: Fitting model...                     (12.3s)
     """
-    width = max(MIN_LABEL_WIDTH, len(label) + 6)
     out = sys.stdout
     start = time.monotonic()
     stop = threading.Event()
@@ -26,15 +27,18 @@ def timed_step(label, suffix=None) -> Generator[None, None, None]:
 
     def render(final=False):
         dots = "" if final else "." * dot_count[0]
-        padded = f"{label}{dots}".ljust(width)
         elapsed = time.monotonic() - start
+        timer_str = f"({elapsed:.1f}s)"
         suffix_str = f" {suffix()}" if suffix else ""
+        content = f"{label}{dots}{suffix_str}"
+        width = max(MIN_LABEL_WIDTH, LINE_WIDTH - len(timer_str) - 1)
+        padded = content.ljust(width)
         end = "\n" if final else ""
-        out.write(f"\r{padded}{suffix_str} ({elapsed:.1f}s){end}")
+        out.write(f"\r{padded} {timer_str}{end}")
         out.flush()
 
     def tick():
-        while not stop.wait(0.1):
+        while not stop.wait(TICK_INTERVAL):
             tick_count[0] += 1
             if tick_count[0] % 2 == 0:
                 dot_count[0] = (dot_count[0] % 3) + 1

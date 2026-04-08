@@ -1,11 +1,28 @@
 """Shared evaluation, plotting, and results logging."""
 
+import json
 import os
 import platform
 from datetime import datetime
 
 from .data import LABEL_NAMES
 from .timer import timed_step
+
+HEADER_WIDTH = 64
+
+def _format_display_value(value):
+    """Format values for human-facing console/log display."""
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
+
+def print_value_section(title, values):
+    """Print an indented key/value section for runtime summaries."""
+    if not values:
+        return
+    print(f"{title}:")
+    for key, value in values.items():
+        print(f"  {key}: {_format_display_value(value)}")
 
 def _get_cpu_name():
     """Get the CPU model name."""
@@ -60,9 +77,9 @@ def get_device_name(cpu_only=False):
 
 def print_run_header(title, mode=None, device=None, seed=None, extra_info=None):
     """Print a consistent header for training and tuning runs."""
-    print("=" * 60)
+    print("=" * HEADER_WIDTH)
     print(title if mode is None else f"{title} - {mode.title()} Run")
-    print("=" * 60)
+    print("=" * HEADER_WIDTH)
     if device is not None:
         print(f"Device: {device}")
     if seed is not None:
@@ -86,9 +103,9 @@ def print_metrics(metrics, model_name, y_true=None, y_pred=None):
     """Print formatted evaluation results. Includes classification_report if y_true/y_pred given."""
     from sklearn.metrics import classification_report
 
-    print("=" * 60)
+    print("=" * HEADER_WIDTH)
     print(f"{model_name} - Evaluation Results")
-    print("=" * 60)
+    print("=" * HEADER_WIDTH)
     print(f"Accuracy:        {metrics['accuracy']:.4f}")
     print(f"Macro Precision: {metrics['macro_precision']:.4f}")
     print(f"Macro Recall:    {metrics['macro_recall']:.4f}")
@@ -121,19 +138,18 @@ def plot_confusion_matrix(y_true, y_pred, save_path, model_name, title_suffix=No
         plt.close()
     print(f"Confusion matrix saved to {save_path}")
 
-def _result_section_name(model_name, final=False, default_params: bool | None = False):
+def _result_section_name(model_name, final=False, default_config: bool | None = False):
     """Return the results_log.md section header for a given run configuration."""
     mode = "final" if final else "validation"
-    if default_params is None:
+    if default_config is None:
         return f"{model_name} ({mode})"
-    params_tag = "default params" if default_params else "best params"
-    return f"{model_name} ({mode}, {params_tag})"
+    config_tag = "default config" if default_config else "best config"
+    return f"{model_name} ({mode}, {config_tag})"
 
 def _get_logged_macro_f1(log_path, section):
-    """Read the existing Macro F1 for a section, if present."""
+    """Read the existing displayed Macro F1 for a section, if present."""
     if not os.path.exists(log_path):
         return None
-
     in_section = False
     with open(log_path) as f:
         for raw_line in f:
@@ -141,43 +157,47 @@ def _get_logged_macro_f1(log_path, section):
             if line.startswith("## "):
                 in_section = line[3:] == section
                 continue
-            if in_section and line.startswith("- **Macro F1:** "):
+            if not in_section:
+                continue
+            if "Macro F1" in line:
                 try:
-                    return float(line.split(": ", 1)[1])
-                except ValueError:
+                    return float(line.rsplit(" ", 1)[1])
+                except (IndexError, ValueError):
                     return None
     return None
 
 def _should_update_result(log_path, model_name, new_macro_f1, final=False,
-                          default_params: bool | None = False):
+                          default_config: bool | None = False):
     """Return whether a run should overwrite the saved result for its section."""
     section = _result_section_name(
         model_name,
         final=final,
-        default_params=default_params,
+        default_config=default_config,
     )
     old_macro_f1 = _get_logged_macro_f1(log_path, section)
     return old_macro_f1 is None or new_macro_f1 >= old_macro_f1, section, old_macro_f1
 
 def save_results(model_name, metrics, elapsed, log_path, final=False, device=None,
-                 default_params: bool | None = False, params=None, extra_info=None):
+                 default_config: bool | None = False, params=None, metadata=None,
+                 extra_info=None, results_name=None):
     """Update a results_log.md with the latest run for this model.
 
     Each model/mode combo (e.g. "Random Forest (final)") gets its own section.
     Running again overwrites that section with new results.
-    Pass default_params=None to omit the params tag (e.g. for Decision Tree).
+    Pass default_config=None to omit the config tag.
     """
+    section_model_name = results_name or model_name
     should_update, section, old_macro_f1 = _should_update_result(
         log_path,
-        model_name,
+        section_model_name,
         metrics["macro_f1"],
         final=final,
-        default_params=default_params,
+        default_config=default_config,
     )
     if not should_update:
         print(
             f"Keeping existing results for '{section}' "
-            f"({old_macro_f1:.4f} > {metrics['macro_f1']:.4f})"
+            f"(existing {old_macro_f1:.4f} > new {metrics['macro_f1']:.4f})"
         )
         return False
 
@@ -197,13 +217,21 @@ def save_results(model_name, metrics, elapsed, log_path, final=False, device=Non
     if extra_info:
         for key, value in extra_info.items():
             new_lines.append(f"- **{key}:** {value}")
-    if params:
+    if params or metadata:
         new_lines.append("")
         new_lines.append("<details>")
-        new_lines.append("<summary>Parameters</summary>")
+        new_lines.append("<summary>Config</summary>")
         new_lines.append("")
-        for k, v in params.items():
-            new_lines.append(f"- `{k}`: {v:.4f}" if isinstance(v, float) else f"- `{k}`: {v}")
+        if params:
+            new_lines.append("**Params**")
+            for k, v in params.items():
+                new_lines.append(f"- `{k}`: {v}")
+        if metadata:
+            if params:
+                new_lines.append("")
+            new_lines.append("**Metadata**")
+            for k, v in metadata.items():
+                new_lines.append(f"- `{k}`: {v}")
         new_lines.append("")
         new_lines.append("</details>")
 

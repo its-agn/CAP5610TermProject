@@ -6,11 +6,12 @@ import time
 from datetime import datetime
 from typing import Callable
 
+RULE_WIDTH = 64
+
 def tune_model(
     objective: Callable,
     n_trials: int = 30,
     log_path: str | None = None,
-    best_params_path: str | None = None,
     model_name: str = "Model",
     cpu_only: bool = False,
     extra_info: dict | None = None,
@@ -24,11 +25,10 @@ def tune_model(
                    the score to maximize (e.g. macro F1).
         n_trials: number of trials to run.
         log_path: if set, write a markdown tuning log here (updated each trial).
-        best_params_path: if set, save best params JSON here at the end.
         model_name: name for the tuning log header.
 
     Returns:
-        dict with "best_params", "best_score", "best_user_attrs", and "all_results"
+        dict with "best_config", "best_score", "best_user_attrs", and "all_results"
     """
     import optuna
 
@@ -39,9 +39,7 @@ def tune_model(
         sampler=optuna.samplers.TPESampler(seed=seed),
     )
 
-    log_info = {"Seed": seed}
-    if extra_info:
-        log_info.update(extra_info)
+    log_info = dict(extra_info) if extra_info else {}
 
     trial_count = [0]
 
@@ -60,7 +58,7 @@ def tune_model(
         best_so_far = max(score, study.best_value) if trial_count[0] > 1 else score
         print(f"  Macro F1: {score:.4f} | Best: {best_so_far:.4f} | {elapsed:.0f}s")
         print("  " + "  ".join(f"{k}={_fmt_val(v)}" for k, v in trial.params.items()))
-        print("-" * 60)
+        print("-" * RULE_WIDTH)
         return score
 
     def callback(_study, _trial):
@@ -81,13 +79,13 @@ def tune_model(
 
     results = _study_to_results(study)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'='*RULE_WIDTH}")
     print(f"Overall best Macro F1: {results['best_score']:.4f}")
-    print("Best params:")
-    for k, v in results["best_params"].items():
+    print("Best config:")
+    for k, v in results["best_config"].items():
         print(f"  {k}: {_fmt_val(v)}")
     print(f"Total tuning time: {total_time:.0f}s ({total_time/60:.1f}m)")
-    print("=" * 60)
+    print("=" * RULE_WIDTH)
 
     if log_path:
         write_tuning_log(
@@ -99,9 +97,6 @@ def tune_model(
             extra_info=log_info,
         )
         print(f"Tuning log saved to {log_path}")
-    if best_params_path:
-        save_best_params(results["best_params"], best_params_path, score=results["best_score"])
-
     return results
 
 def _study_to_results(study):
@@ -119,40 +114,46 @@ def _study_to_results(study):
             })
 
     return {
-        "best_params": study.best_params,
+        "best_config": study.best_params,
         "best_score": study.best_value,
         "best_user_attrs": dict(study.best_trial.user_attrs),
         "all_results": all_results,
     }
 
-def save_best_params(params, path, score=None, metadata=None):
-    """Save best params dict to JSON. Converts tuples to lists for serialization.
-    If score is provided, only keeps the existing file when it is strictly better.
-    """
-    if score is not None and os.path.exists(path):
-        with open(path) as f:
-            existing = json.load(f)
-        old_score = existing.get("metadata", {}).get("f1_score")
-        if old_score is not None and score < old_score:
-            print(f"Keeping existing best params ({old_score:.4f} > {score:.4f})")
-            return
+def save_best_config(params, path, metadata=None, macro_f1=None):
+    """Save best config to JSON using params/metadata sections.
 
+    If an existing config has a strictly better saved macro_f1, keep it.
+    Equal scores overwrite so the latest equivalent winner can replace it.
+    """
     serializable = {}
     for k, v in params.items():
         serializable[k] = list(v) if isinstance(v, tuple) else v
 
     data = {"params": serializable}
-    meta = metadata or {}
-    if score is not None:
-        meta["f1_score"] = score
-    if meta:
-        data["metadata"] = meta
+    if metadata:
+        data["metadata"] = metadata
+    if macro_f1 is not None:
+        data["macro_f1"] = macro_f1
+
+    if os.path.exists(path):
+        with open(path) as f:
+            existing = json.load(f)
+        existing_score = existing.get("macro_f1")
+        if existing_score is not None and macro_f1 is not None and macro_f1 < existing_score:
+            print(
+                f"Keeping existing best config at {path} "
+                f"(existing {existing_score:.4f} > new {macro_f1:.4f})"
+            )
+            return False
+
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"Best params saved to {path}")
+    print(f"Best config saved to {path}")
+    return True
 
-def load_best_params(path):
-    """Load best params and metadata from JSON. Returns (params, metadata) tuple."""
+def load_best_config(path):
+    """Load best config JSON. Returns (params, metadata)."""
     if not os.path.exists(path):
         return None, {}
     with open(path) as f:
@@ -215,7 +216,7 @@ def write_tuning_log(results, path, model_name="Model", cpu_only=False, total_ti
         if total_time is not None:
             f.write(f"\n## Best Result (This Run)\n\n")
             f.write(f"- **Macro F1:** {results['best_score']:.4f}\n")
-            for k, v in results["best_params"].items():
+            for k, v in results["best_config"].items():
                 if isinstance(v, float):
                     f.write(f"- **{col_name(k)}:** {v:.4f}\n")
                 else:

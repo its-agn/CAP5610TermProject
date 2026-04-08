@@ -2,14 +2,23 @@
 
 from .timer import timed_step
 
-def fit_tfidf_features(train_texts, eval_texts, max_features=20000,
-                       ngram_range=(1, 2), indent=""):
+def fit_tfidf_features(
+    train_texts,
+    eval_texts,
+    max_features=20000,
+    ngram_range=(1, 2),
+    min_df=5,
+    max_df=0.9,
+    indent="",
+):
     """Fit TF-IDF on train_texts and transform eval_texts with the same vocabulary."""
     from sklearn.feature_extraction.text import TfidfVectorizer
 
     vectorizer = TfidfVectorizer(
         max_features=max_features,
         ngram_range=ngram_range,
+        min_df=min_df,
+        max_df=max_df,
         sublinear_tf=True,
         strip_accents="unicode",
     )

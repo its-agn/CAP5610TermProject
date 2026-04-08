@@ -46,13 +46,12 @@ Common flags:
 
 - `--final` train on full 650k (default 150k subsample), evaluate on test set
 - `--tune` run Optuna hyperparameter tuning
-- `--no-save` skip saving results (applies to both `results_log.md` and `tuning_log.md`)
-- `--default-params` use default params instead of tuned best params
+- `--discard` skip saving results (applies to both `results_log.md` and `tuning_log.md`)
+- `--default` use default params instead of the tuned best config
 
 Model-specific flags:
 
-- **Random Forest:** `--single-tree` uses a single Decision Tree instead of the ensemble
-- **CNN:** `--glove-6b` uses smaller GloVe 6B 100d embeddings; `--no-glove` uses random embeddings
+- **CNN:** `--(embedding option)` use pre-trained embeddings options such as GloVe 6B 100d (`--glove-6b-100d`)
 
 Example:
 
