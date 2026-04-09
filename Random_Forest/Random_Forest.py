@@ -2,233 +2,249 @@
 Random Forest on Yelp Review Full (5-class star rating prediction).
 Keating Sane - CAP5610 Spring 2026
 
-Usage: python Random_Forest.py [common flags] [--single-tree]
+Usage: python Random_Forest.py [common flags]
 """
 import os
 import sys
 import time
-from typing import Literal
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
+    DEFAULT_SEED,
     common_parser,
     compute_metrics,
+    fit_tfidf_features,
     get_device_name,
-    load_best_params,
+    load_best_config,
     load_yelp_data,
     plot_confusion_matrix,
     print_metrics,
+    print_run_header,
+    print_value_section,
+    save_best_config,
     save_results,
+    set_random_seed,
     timed_step,
     tune_model,
 )
 
-if __name__ == "__main__":
-    parser = common_parser()
-    parser.add_argument("--single-tree", action="store_true",
-                        help="Use a single Decision Tree instead of Random Forest")
-    args = parser.parse_args()
-    if args.tune and (args.final or args.default_params or args.single_tree):
-        parser.error("--tune cannot be combined with --final, --default-params, or --single-tree")
-    if args.single_tree and args.default_params:
-        parser.error("--single-tree and --default-params cannot be combined (Decision Tree uses fixed params)")
-
-with timed_step("Loading libraries"):
-    import numpy as np
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.model_selection import cross_val_score
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.tree import DecisionTreeClassifier
-
-import logging
-logging.getLogger("huggingface_hub.utils._http").setLevel(logging.CRITICAL)
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TUNING_LOG = os.path.join(SCRIPT_DIR, "tuning_log.md")
 RESULTS_LOG = os.path.join(SCRIPT_DIR, "results_log.md")
-BEST_PARAMS_FILE = os.path.join(SCRIPT_DIR, "best_params.json")
+BEST_CONFIG_FILE = os.path.join(SCRIPT_DIR, "best_config.json")
+TUNING_TRAIN_SIZE = 200000
+TUNING_VAL_SPLIT = 0.1
+TUNING_TRIALS = 20
 
-def extract_features(train_texts, eval_texts, max_features=20000, ngram_range=(1, 2)):
-    """TF-IDF vectorization. Vocabulary is learned from train_texts only."""
-    vectorizer = TfidfVectorizer(
-        max_features=max_features,
-        ngram_range=ngram_range,
-        sublinear_tf=True,
-        strip_accents="unicode",
-    )
-    with timed_step("Fitting TF-IDF on training data"):
-        X_train = vectorizer.fit_transform(train_texts)
-    with timed_step("Transforming eval data"):
-        X_eval = vectorizer.transform(eval_texts)
-    return X_train, X_eval
+if __name__ == "__main__":
+    parser = common_parser()
+    args = parser.parse_args()
+    if args.tune and (args.final or args.default):
+        parser.error("--tune cannot be combined with --final or --default")
+
+with timed_step("Loading libraries"):
+    import numpy as np
+    from sklearn.ensemble import RandomForestClassifier
 
 def train_model(X_train, y_train, n_estimators=100, max_depth=150,
-                min_samples_leaf=1,
-                max_features: Literal["sqrt", "log2"] = "sqrt",
-                random_state=0, single_tree=False):
-    if single_tree:
-        model = DecisionTreeClassifier(max_depth=max_depth, min_samples_leaf=min_samples_leaf,
-                                       random_state=random_state)
-        with timed_step("Fitting decision tree"):
-            model.fit(X_train, y_train)
-    else:
-        model = RandomForestClassifier(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            min_samples_leaf=min_samples_leaf,
-            max_features=max_features,
-            n_jobs=-1,
-            random_state=random_state,
-            verbose=0,
-        )
-        with timed_step(f"Fitting random forest ({n_estimators} trees)"):
-            model.fit(X_train, y_train)
+                min_samples_leaf=1, max_features: Any = "sqrt",
+                random_state=DEFAULT_SEED, indent=""):
+    model = RandomForestClassifier(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        min_samples_leaf=min_samples_leaf,
+        max_features=max_features,
+        n_jobs=-1,
+        random_state=random_state,
+        verbose=0,
+    )
+    with timed_step(f"{indent}Fitting random forest ({n_estimators} trees)"):
+        model.fit(X_train, y_train)
     return model
 
-def evaluate(model, X_eval, y_eval, verbose=True, model_name="Random Forest"):
+def evaluate(model, X_eval, y_eval, verbose=True, model_name="Random Forest", indent=""):
     """Run predictions and compute evaluation metrics."""
-    y_pred = model.predict(X_eval)
+    with timed_step(f"{indent}Running inference"):
+        y_pred = model.predict(X_eval)
     metrics = compute_metrics(y_eval, y_pred)
     if verbose:
         print_metrics(metrics, model_name, y_eval, y_pred)
     return y_pred, metrics
 
-def run_tuning(no_save=False):
+def run_tuning(discard=False):
     """Tune RF with Optuna (Bayesian optimization)."""
-    from sklearn.model_selection import train_test_split
+    set_random_seed(DEFAULT_SEED)
+    print_run_header(
+        "Random Forest",
+        mode="tuning",
+        device=get_device_name(cpu_only=True),
+        extra_info={
+            "Dataset": f"{TUNING_TRAIN_SIZE} train ({int(TUNING_VAL_SPLIT * 100)}% val split)",
+            "Trials": TUNING_TRIALS,
+        },
+    )
 
     with timed_step("Loading dataset"):
-        all_texts, all_labels, _, _, _, _ = load_yelp_data(train_size=None, val_split=0, skip_test=True)
-
-    # subsample once for tuning
-    train_texts, _, train_labels, _ = train_test_split(
-        all_texts, list(all_labels),
-        train_size=150000, stratify=all_labels, random_state=0,
-    )
-    y = np.array(train_labels)
+        train_texts, train_labels, val_texts, val_labels, _, _ = load_yelp_data(
+            train_size=TUNING_TRAIN_SIZE,
+            val_split=TUNING_VAL_SPLIT,
+            skip_test=True,
+            seed=DEFAULT_SEED,
+        )
+    assert val_texts is not None and val_labels is not None
+    y_train = np.array(train_labels)
+    y_val = np.array(val_labels)
 
     def objective(trial):
-        # TF-IDF params
-        tfidf_features = trial.suggest_categorical("tfidf_features", [5000, 10000, 20000, 40000])
-        ngram_max = trial.suggest_int("ngram_max", 1, 2)
+        tfidf_features = trial.suggest_categorical("tfidf_features", [20000, 40000])
+        ngram_max = trial.suggest_categorical("ngram_max", [2])
+        min_df = trial.suggest_categorical("min_df", [5, 10])
+        max_df = trial.suggest_categorical("max_df", [0.85, 0.9])
 
-        # RF params
-        n_estimators = trial.suggest_categorical("n_estimators", [100, 200, 300, 500])
-        max_depth = trial.suggest_categorical("max_depth", [50, 100, 150, 300])
-        min_samples_leaf = trial.suggest_int("min_samples_leaf", 1, 10)
-        max_features_choice = trial.suggest_categorical("max_features", ["sqrt", "log2"])
+        n_estimators = trial.suggest_categorical("n_estimators", [500])
+        max_depth = trial.suggest_categorical("max_depth", [150, 300])
+        min_samples_leaf = trial.suggest_categorical("min_samples_leaf", [3, 4, 5])
+        max_features_choice = trial.suggest_categorical("max_features", ["sqrt"])
 
-        vectorizer = TfidfVectorizer(
+        X_train, X_val = fit_tfidf_features(
+            train_texts,
+            val_texts,
             max_features=tfidf_features,
             ngram_range=(1, ngram_max),
-            sublinear_tf=True,
-            strip_accents="unicode",
+            min_df=min_df,
+            max_df=max_df,
+            indent="  ",
         )
-        with timed_step("  Vectorizing TF-IDF"):
-            X = vectorizer.fit_transform(train_texts)
-
-        model = RandomForestClassifier(
+        model = train_model(
+            X_train,
+            y_train,
             n_estimators=n_estimators,
             max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,
             max_features=max_features_choice,
-            n_jobs=-1,
-            random_state=0,
+            random_state=DEFAULT_SEED,
+            indent="  ",
         )
+        _, metrics = evaluate(model, X_val, y_val, verbose=False, indent="  ")
+        return metrics["macro_f1"]
 
-        with timed_step("  Cross-validating (3-fold)"):
-            scores = cross_val_score(model, X, y, cv=3, scoring="f1_macro")
-        return scores.mean()
-
-    tune_model(
+    results = tune_model(
         objective,
-        n_trials=30,
-        log_path=None if no_save else TUNING_LOG,
-        best_params_path=None if no_save else BEST_PARAMS_FILE,
+        n_trials=TUNING_TRIALS,
+        log_path=None if discard else TUNING_LOG,
         model_name="Random Forest",
         cpu_only=True,
+        extra_info={
+            "Dataset": f"{TUNING_TRAIN_SIZE} train ({int(TUNING_VAL_SPLIT * 100)}% val split)",
+            "Trials": TUNING_TRIALS,
+        },
+        seed=DEFAULT_SEED,
     )
+    if not discard:
+        save_best_config(
+            results["best_config"],
+            BEST_CONFIG_FILE,
+            metadata={
+                "seed": DEFAULT_SEED,
+                "tuning_train_size": len(train_texts) + len(val_texts),
+                "tuning_val_split": TUNING_VAL_SPLIT,
+                "tuning_trials": TUNING_TRIALS,
+            },
+            macro_f1=results["best_score"],
+        )
 
-def main(single_tree=False, final=False, no_save=False, default_params=False):
+def main(final=False, discard=False, default_config=False):
+    set_random_seed(DEFAULT_SEED)
     run_start = time.monotonic()
-    model_name = "Decision Tree" if single_tree else "Random Forest"
+    model_name = "Random Forest"
 
     RF_DEFAULT_PARAMS = {
         "tfidf_features": 20000, "ngram_max": 2, "n_estimators": 100,
         "max_depth": 150, "min_samples_leaf": 1, "max_features": "sqrt",
-    }
-    DT_PARAMS = {
-        "tfidf_features": 20000, "ngram_max": 2,
-        "max_depth": 100, "min_samples_leaf": 5,
+        "min_df": 5, "max_df": 0.9,
     }
 
-    if single_tree:
-        params = DT_PARAMS
-        using_defaults = True
-        print("Using Decision Tree params:")
-    else:
-        params, _ = (None, {}) if default_params else load_best_params(BEST_PARAMS_FILE)
-        using_defaults = params is None
-        if using_defaults:
-            params = RF_DEFAULT_PARAMS
-        print("Using default params:" if using_defaults else "Using best tuned params (from best_params.json):")
-    for k, v in params.items():
-        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+    params, metadata = (None, {}) if default_config else load_best_config(BEST_CONFIG_FILE)
+    using_defaults = params is None
+    if params is None:
+        params = RF_DEFAULT_PARAMS
+    params_source = "default config" if using_defaults else "best tuned config"
+    print_run_header(
+        model_name,
+        mode="final" if final else "validation",
+        device=get_device_name(cpu_only=True),
+        extra_info={"Config source": params_source},
+    )
+    print_value_section("Parameters", params)
 
     if final:
         with timed_step("Loading full dataset (650k, no subsampling)"):
             train_texts, y_train, _, _, eval_texts, y_eval = load_yelp_data(
-                train_size=None, val_split=0,
+                train_size=None, val_split=0, seed=DEFAULT_SEED,
             )
         eval_label = "TEST"
     else:
         with timed_step("Loading dataset (subsampled to 150k)"):
-            train_texts, y_train, eval_texts, y_eval, _, _ = load_yelp_data(train_size=150000)
+            train_texts, y_train, eval_texts, y_eval, _, _ = load_yelp_data(
+                train_size=150000,
+                seed=DEFAULT_SEED,
+            )
         eval_label = "validation"
 
     assert eval_texts is not None and y_eval is not None
     print(f"Train: {len(train_texts)} | {eval_label}: {len(eval_texts)}")
 
-    X_train, X_eval = extract_features(
+    X_train, X_eval = fit_tfidf_features(
         train_texts, eval_texts,
         max_features=params["tfidf_features"],
         ngram_range=(1, params["ngram_max"]),
+        min_df=params["min_df"],
+        max_df=params["max_df"],
     )
     print(f"Feature matrix: {X_train.shape}")
 
-    if single_tree:
-        model = train_model(
-            X_train, y_train, single_tree=True,
-            max_depth=params["max_depth"],
-            min_samples_leaf=params["min_samples_leaf"],
-        )
-    else:
-        model = train_model(
-            X_train, y_train,
-            n_estimators=params["n_estimators"],
-            max_depth=params["max_depth"],
-            min_samples_leaf=params["min_samples_leaf"],
-            max_features=params["max_features"],
-        )
+    model = train_model(
+        X_train, y_train,
+        n_estimators=params["n_estimators"],
+        max_depth=params["max_depth"],
+        min_samples_leaf=params["min_samples_leaf"],
+        max_features=params["max_features"],
+    )
 
     y_pred, metrics = evaluate(model, X_eval, y_eval, model_name=model_name)
 
     total = time.monotonic() - run_start
-    if not no_save:
-        if final and (single_tree or not default_params):
-            cm_name = "confusion_matrix_dt.png" if single_tree else "confusion_matrix_rf.png"
-            cm_path = os.path.join(SCRIPT_DIR, cm_name)
-            plot_confusion_matrix(y_eval, y_pred, cm_path, model_name)
+    if not discard:
         device = get_device_name(cpu_only=True)
-        save_results(model_name, metrics, total, RESULTS_LOG, final=final, device=device,
-                     default_params=None if single_tree else using_defaults, params=params)
+        saved = save_results(
+            model_name,
+            metrics,
+            total,
+            RESULTS_LOG,
+            final=final,
+            device=device,
+            default_config=using_defaults,
+            params=params,
+            metadata=({"seed": DEFAULT_SEED} if using_defaults else metadata),
+        )
+        if final and not default_config and saved:
+            cm_path = os.path.join(SCRIPT_DIR, "confusion_matrix_rf.png")
+            plot_confusion_matrix(
+                y_eval,
+                y_pred,
+                cm_path,
+                model_name,
+                title_suffix=f"Macro F1={metrics['macro_f1']:.4f}",
+            )
+        elif final and not default_config:
+            print("Keeping existing confusion matrix because results were not updated")
     else:
-        print("Skipping save (--no-save)")
+        print("Skipping save (--discard)")
     print(f"\nTotal time: {total:.1f}s ({total/60:.1f}m)")
 
 if __name__ == "__main__":
     if args.tune:
-        run_tuning(no_save=args.no_save)
+        run_tuning(discard=args.discard)
     else:
-        main(single_tree=args.single_tree, final=args.final, no_save=args.no_save,
-             default_params=args.default_params)
+        main(final=args.final, discard=args.discard, default_config=args.default)

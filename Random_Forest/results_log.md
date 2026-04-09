@@ -1,129 +1,119 @@
 # Results Log
 
-## Random Forest (final, best params)
+## Random Forest (validation, best config)
 
-- **Date:** 2026-04-06 01:08
+- **Date:** 2026-04-08 21:02
 - **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
-- **Accuracy:** 0.5531
-- **Macro Precision:** 0.5436
-- **Macro Recall:** 0.5531
-- **Macro F1:** 0.5437
-- **Time:** 3253.4s (54.2m)
+- **Accuracy:** 0.5479
+- **Macro Precision:** 0.5380
+- **Macro Recall:** 0.5479
+- **Macro F1:** 0.5372
+- **Time:** 180.3s (3.0m)
 
 <details>
-<summary>Parameters</summary>
+<summary>Config</summary>
 
+**Params**
 - `tfidf_features`: 40000
 - `ngram_max`: 2
+- `min_df`: 10
+- `max_df`: 0.85
 - `n_estimators`: 500
-- `max_depth`: 100
-- `min_samples_leaf`: 3
+- `max_depth`: 150
+- `min_samples_leaf`: 4
 - `max_features`: sqrt
+
+**Metadata**
+- `seed`: 0
+- `tuning_train_size`: 200000
+- `tuning_val_split`: 0.1
+- `tuning_trials`: 20
 
 </details>
 
-## Random Forest (final, default params)
+## Random Forest (final, best config)
 
-- **Date:** 2026-04-06 01:35
+- **Date:** 2026-04-08 21:45
 - **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
-- **Accuracy:** 0.5341
-- **Macro Precision:** 0.5241
-- **Macro Recall:** 0.5341
-- **Macro F1:** 0.5254
-- **Time:** 1661.4s (27.7m)
+- **Accuracy:** 0.5555
+- **Macro Precision:** 0.5464
+- **Macro Recall:** 0.5555
+- **Macro F1:** 0.5468
+- **Time:** 2632.9s (43.9m)
 
 <details>
-<summary>Parameters</summary>
+<summary>Config</summary>
 
+**Params**
+- `tfidf_features`: 40000
+- `ngram_max`: 2
+- `min_df`: 10
+- `max_df`: 0.85
+- `n_estimators`: 500
+- `max_depth`: 150
+- `min_samples_leaf`: 4
+- `max_features`: sqrt
+
+**Metadata**
+- `seed`: 0
+- `tuning_train_size`: 200000
+- `tuning_val_split`: 0.1
+- `tuning_trials`: 20
+
+</details>
+
+## Random Forest (validation, default config)
+
+- **Date:** 2026-04-08 21:47
+- **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
+- **Accuracy:** 0.5287
+- **Macro Precision:** 0.5178
+- **Macro Recall:** 0.5287
+- **Macro F1:** 0.5181
+- **Time:** 122.0s (2.0m)
+
+<details>
+<summary>Config</summary>
+
+**Params**
 - `tfidf_features`: 20000
 - `ngram_max`: 2
 - `n_estimators`: 100
 - `max_depth`: 150
 - `min_samples_leaf`: 1
 - `max_features`: sqrt
+- `min_df`: 5
+- `max_df`: 0.9
+
+**Metadata**
+- `seed`: 0
 
 </details>
 
-## Decision Tree (final)
+## Random Forest (final, default config)
 
-- **Date:** 2026-04-06 13:40
+- **Date:** 2026-04-08 22:13
 - **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
-- **Accuracy:** 0.3962
-- **Macro Precision:** 0.3958
-- **Macro Recall:** 0.3962
-- **Macro F1:** 0.3958
-- **Time:** 5082.2s (84.7m)
+- **Accuracy:** 0.5361
+- **Macro Precision:** 0.5261
+- **Macro Recall:** 0.5361
+- **Macro F1:** 0.5277
+- **Time:** 1597.0s (26.6m)
 
 <details>
-<summary>Parameters</summary>
+<summary>Config</summary>
 
-- `tfidf_features`: 20000
-- `ngram_max`: 2
-- `max_depth`: 100
-- `min_samples_leaf`: 5
-
-</details>
-
-## Random Forest (validation, best params)
-
-- **Date:** 2026-04-06 12:09
-- **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
-- **Accuracy:** 0.5517
-- **Macro Precision:** 0.5421
-- **Macro Recall:** 0.5517
-- **Macro F1:** 0.5412
-- **Time:** 199.8s (3.3m)
-
-<details>
-<summary>Parameters</summary>
-
-- `tfidf_features`: 40000
-- `ngram_max`: 2
-- `n_estimators`: 500
-- `max_depth`: 100
-- `min_samples_leaf`: 3
-- `max_features`: sqrt
-
-</details>
-
-## Random Forest (validation, default params)
-
-- **Date:** 2026-04-06 12:16
-- **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
-- **Accuracy:** 0.5235
-- **Macro Precision:** 0.5117
-- **Macro Recall:** 0.5235
-- **Macro F1:** 0.5128
-- **Time:** 143.0s (2.4m)
-
-<details>
-<summary>Parameters</summary>
-
+**Params**
 - `tfidf_features`: 20000
 - `ngram_max`: 2
 - `n_estimators`: 100
 - `max_depth`: 150
 - `min_samples_leaf`: 1
 - `max_features`: sqrt
+- `min_df`: 5
+- `max_df`: 0.9
 
-</details>
-
-## Decision Tree (validation)
-
-- **Date:** 2026-04-06 12:22
-- **Device:** AMD Ryzen 7 9800X3D 8-Core Processor
-- **Accuracy:** 0.3750
-- **Macro Precision:** 0.3740
-- **Macro Recall:** 0.3750
-- **Macro F1:** 0.3742
-- **Time:** 375.8s (6.3m)
-
-<details>
-<summary>Parameters</summary>
-
-- `tfidf_features`: 20000
-- `ngram_max`: 2
-- `max_depth`: 100
-- `min_samples_leaf`: 5
+**Metadata**
+- `seed`: 0
 
 </details>
