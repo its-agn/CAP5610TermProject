@@ -8,10 +8,11 @@ from collections import Counter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
     compute_metrics,
-    load_best_params,
+    load_best_config,
     load_yelp_data,
     plot_confusion_matrix,
     print_metrics,
+    save_best_config,
     save_results,
     timed_step,
     tune_model,
@@ -284,19 +285,19 @@ def run_tuning():
         )
         return metrics["macro_f1"]
 
-    tune_model(
+    results = tune_model(
         objective,
         n_trials=10,
         log_path=TUNING_LOG,
-        best_params_path=BEST_PARAMS_FILE,
         model_name="Transformer Encoder",
     )
+    save_best_config(results["best_config"], BEST_PARAMS_FILE)
 
 
 def main(final=False):
     run_start = time.time()
     model_name = "Transformer Encoder"
-    best, _ = load_best_params(BEST_PARAMS_FILE)
+    best, _ = load_best_config(BEST_PARAMS_FILE)
     params = merge_params(best)
 
     if best:

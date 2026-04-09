@@ -6,10 +6,11 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils import (
     compute_metrics,
-    load_best_params,
+    load_best_config,
     load_yelp_data,
     plot_confusion_matrix,
     print_metrics,
+    save_best_config,
     save_results,
     timed_step,
     tune_model,
@@ -120,20 +121,20 @@ def run_tuning():
         _, metrics = evaluate(model, X_val, y_val, verbose=False)
         return metrics["macro_f1"]
 
-    tune_model(
+    results = tune_model(
         objective,
         n_trials=30,
         log_path=TUNING_LOG,
-        best_params_path=BEST_PARAMS_FILE,
         model_name="Logistic Regression",
     )
+    save_best_config(results["best_config"], BEST_PARAMS_FILE)
 
 
 def main(final=False):
     run_start = time.time()
     model_name = "Logistic Regression"
 
-    best, _ = load_best_params(BEST_PARAMS_FILE)
+    best, _ = load_best_config(BEST_PARAMS_FILE)
     if best:
         print(f"Using tuned params: {best}")
 

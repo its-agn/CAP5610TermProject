@@ -16,7 +16,17 @@ import time
 #Tell Python to look one folder up for the utils package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from utils import timed_step, load_yelp_data, compute_metrics, print_metrics, plot_confusion_matrix, save_results, tune_model, save_best_params
+from utils import (
+    timed_step,
+    load_yelp_data,
+    compute_metrics,
+    print_metrics,
+    plot_confusion_matrix,
+    save_results,
+    tune_model,
+    save_best_config,
+    load_best_config,
+)
 
 import logging    #Get rid of the annoying HuggingFace token warning
 logging.getLogger("huggingface_hub.utils._http").setLevel(logging.CRITICAL)
@@ -51,14 +61,13 @@ def run_tuning():
         metrics = compute_metrics(y_val, y_pred)
         return metrics["macro_f1"]
 
-    results = (tune_model
-        (
-            objective,
-            n_trials=15,
-            log_path=TUNING_LOG,
-            best_params_path=BEST_PARAMS_FILE,
-            model_name="Kernel SVM"
-        ))
+    results = tune_model(
+        objective,
+        n_trials=15,
+        log_path=TUNING_LOG,
+        model_name="Kernel SVM",
+    )
+    save_best_config(results["best_config"], BEST_PARAMS_FILE)
     return results
 #End of automated tuning
 
@@ -78,6 +87,8 @@ def main():
         print(f"Tuning complete! Best params saved to {BEST_PARAMS_FILE}")
         return
 
+    best, _ = load_best_config(BEST_PARAMS_FILE)
+
     #Load and sub-sample the data
     with timed_step(f"Loading Yelp dataset (sub-sampled) (size={args.size})"):
         #This automatically subsamples to 10k to avoid training time issues!
@@ -94,7 +105,10 @@ def main():
     with timed_step("Applying TF-IDF Vectorization"):
         #max_features limits the dictionary to the top 10,000 most important words
         #Give highest scores to words that are frequent in a specific review, but rare across the whole dataset (e.g., "undercooked" or "phenomenal")
-        vectorizer = TfidfVectorizer(max_features=10000, stop_words='english')
+        vectorizer = TfidfVectorizer(
+            max_features=best.get("max_features", 10000) if best else 10000,
+            stop_words='english',
+        )
 
         #Learn the vocabulary and transform the text into numbers
         X_train_vectors = vectorizer.fit_transform(train_texts)
@@ -103,7 +117,7 @@ def main():
         X_val_vectors = vectorizer.transform(val_texts)
 
     #Initialize and Train the Kernel SVM :)
-    C = 1
+    C = best.get("C", 1) if best else 1
     with timed_step(f"Training Kernel SVM (RBF) (C={C})"):
         #kernel='rbf' is the "Radial Basis Function" (the Kernel trick)
         #C=1.0 is the default penalty for mistakes, which ended up being the best value found for this dataset
