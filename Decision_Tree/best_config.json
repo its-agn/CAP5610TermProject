@@ -1,0 +1,17 @@
+{
+  "params": {
+    "tfidf_features": 40000,
+    "ngram_max": 2,
+    "min_df": 10,
+    "max_df": 0.9,
+    "max_depth": 300,
+    "min_samples_leaf": 10
+  },
+  "metadata": {
+    "seed": 0,
+    "tuning_train_size": 200000,
+    "tuning_val_split": 0.1,
+    "tuning_trials": 20
+  },
+  "macro_f1": 0.39137967438707255
+}
