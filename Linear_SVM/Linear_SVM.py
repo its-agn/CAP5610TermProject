@@ -2,7 +2,7 @@
 Linear Support Vector Machine (SVM) on YelpReviewFull dataset (5-class star rating prediction).
 
 Run modes:
-    python Linear_SVM.py              # trains on 10k samples
+    python Linear_SVM.py              # trains on the full training split
     python Linear_SVM.py --size n     # trains on n samples
     python Linear_SVM.py --final      # runs on full test set
 '''
@@ -32,11 +32,13 @@ from utils import (
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TUNING_LOG = os.path.join(SCRIPT_DIR, "tuning_log.md")
 BEST_PARAMS_FILE = os.path.join(SCRIPT_DIR, "best_params.json")
+DEFAULT_TRAIN_SIZE = 650000
+TUNING_TRAIN_SIZE = 650000
 
 
 def run_tuning():
     train_texts, y_train, val_texts, y_val, _, _ = load_yelp_data(
-        train_size=10000, val_split=0.2
+        train_size=TUNING_TRAIN_SIZE, val_split=0.2
     )
 
     def objective(trial):
@@ -70,7 +72,12 @@ def main():
     # args
     parser = argparse.ArgumentParser()
     parser.add_argument("--tune", action="store_true", help="Run automated Optuna hyperparameter tuning")
-    parser.add_argument("--size", type=int, default=10000, help="Number of training samples (default: 10000)")
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=DEFAULT_TRAIN_SIZE,
+        help=f"Number of training samples (default: {DEFAULT_TRAIN_SIZE})",
+    )
     parser.add_argument("--final", action="store_true", help="Evaluate on the full test set")
     args = parser.parse_args()
 
@@ -84,7 +91,7 @@ def main():
     # load best params from tune
     best, _ = load_best_config(BEST_PARAMS_FILE)
 
-    #  load sub-sampled dataset
+    # load dataset
     with timed_step(f"Loading Dataset (size={args.size})"):
         train_texts, y_train, val_texts, y_val, test_texts, test_labels = load_yelp_data(train_size=args.size)
 
