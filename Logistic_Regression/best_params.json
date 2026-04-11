@@ -1,0 +1,19 @@
+{
+  "params": {
+    "tfidf_features": 40000,
+    "ngram_max": 2,
+    "min_df": 2,
+    "max_df": 0.9,
+    "C": 0.3791873671893262,
+    "penalty": "l2",
+    "max_iter": 300
+  },
+  "metadata": {
+    "seed": 0,
+    "tuning_train_size": 100000,
+    "tuning_val_split": 0.1,
+    "tuning_trials": 6,
+    "tuning_status": "best completed trial from a timed-out tuning run"
+  },
+  "macro_f1": 0.6002
+}
