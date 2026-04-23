@@ -198,7 +198,7 @@ def train_model(
         )
         train_loss = total_loss / max(total_items, 1)    #This is an average. max prevents division by zero just in case
         print(
-            f"Epoch {epoch + 1}/{epochs} - "
+            f"\n Epoch {epoch + 1}/{epochs} - "
             f" Train loss: {train_loss:.4f} - val_f1: {val_metrics['macro_f1']:.4f}"
         )
         if val_metrics["macro_f1"] > best_score:
@@ -336,6 +336,7 @@ def main(final=False):
         print(f"Using tuned params: {best}")
 
     if final:
+        print()
         with timed_step("Loading full dataset"):
             train_texts, y_train, _, _, eval_texts, y_eval = load_yelp_data(
                 train_size=None,    #We are not training anymore. We want the unseen test set
@@ -350,6 +351,7 @@ def main(final=False):
         )
         eval_label = "TEST"
     else:
+        print()
         with timed_step("Loading dataset"):    #We are training and then evaluating with the validation set
             train_texts, y_train, val_texts, y_val, _, _ = load_yelp_data(
                 train_size=50000,
@@ -402,7 +404,7 @@ def main(final=False):
 
     total = time.time() - run_start
     save_results(model_name, metrics, total, RESULTS_LOG, final=final)
-    print(f"Done in {total:.1f}s.")
+    print(f"\nDone in {total:.1f}s.")
 
 
 if __name__ == "__main__":
