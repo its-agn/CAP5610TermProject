@@ -199,7 +199,7 @@ def train_model(
         train_loss = total_loss / max(total_items, 1)    #This is an average. max prevents division by zero just in case
         print(
             f"\n Epoch {epoch + 1}/{epochs} - "
-            f" Train loss: {train_loss:.4f} - val_f1: {val_metrics['macro_f1']:.4f}"
+            f" Train loss: {train_loss:.4f}.  val_f1: {val_metrics['macro_f1']:.4f}"
         )
         if val_metrics["macro_f1"] > best_score:
             best_score = val_metrics["macro_f1"]
