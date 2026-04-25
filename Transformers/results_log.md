@@ -8,3 +8,13 @@
 - **Macro Recall:** 0.5790
 - **Macro F1:** 0.5781
 - **Time:** 247.8s (4.1m)
+
+## Transformer Encoder (final, best config)
+
+- **Date:** 2026-04-25 21:22
+- **Device:** Tesla T4
+- **Accuracy:** 0.5854
+- **Macro Precision:** 0.5894
+- **Macro Recall:** 0.5854
+- **Macro F1:** 0.5847
+- **Time:** 1296.6s (21.6m)
