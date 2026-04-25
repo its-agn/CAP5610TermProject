@@ -1,0 +1,15 @@
+{
+  "params": {
+    "max_vocab": 15000,
+    "max_len": 160,
+    "embed_dim": 256,
+    "num_heads": 8,
+    "num_layers": 2,
+    "ff_dim": 256,
+    "dropout": 0.2657880058434726,
+    "epochs": 3,
+    "batch_size": 64,
+    "lr": 0.0006503447723302502,
+    "weight_decay": 3.1441719363595296e-05
+  }
+}
