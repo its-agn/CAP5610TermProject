@@ -1,0 +1,14 @@
+{
+  "params": {
+    "hidden1": 512,
+    "hidden2": 512,
+    "dropout": 0.6,
+    "lr": 0.00013203471492592735,
+    "weight_decay": 1.8255254802399002e-05
+  },
+  "metadata": {
+    "tfidf_dim": 10000,
+    "ngram_range": "(1,2)"
+  },
+  "macro_f1": 0.62396
+}
