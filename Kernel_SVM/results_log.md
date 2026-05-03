@@ -17,3 +17,13 @@ Note: Manual refinement (C=1) outperformed the automated hyperparameter tuning.
 - **Macro Recall:** 0.5196
 - **Macro F1:** 0.5186
 - **Time:** 217.6s (3.6m)
+
+## Kernel SVM (validation, best config)
+
+- **Date:** 2026-05-02 21:23
+- **Device:** 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz
+- **Accuracy:** 0.5380
+- **Macro Precision:** 0.5316
+- **Macro Recall:** 0.5380
+- **Macro F1:** 0.5340
+- **Time:** 82.1s (1.4m)
