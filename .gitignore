@@ -16,6 +16,7 @@ __pycache__/
 # Data (GloVe embeddings, etc.)
 .data/
 data/
+Large_Language_Model/saved_model/
 
 # Mac garbage
 .DS_Store

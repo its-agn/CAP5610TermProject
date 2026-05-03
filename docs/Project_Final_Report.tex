@@ -1,0 +1,790 @@
+\documentclass[12pt]{article}
+\usepackage{geometry}
+\geometry{top=15mm, bottom=20mm, left=15mm, right=15mm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{longtable}
+\usepackage{verbatim}
+\usetikzlibrary{positioning, calc}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{CAP5610 -- Machine Learning}
+\lhead{Project Final Report}
+\rfoot{\thepage}
+
+\titleformat{\section}{\large\bfseries}{\thesection.\;}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection\;}{0em}{}
+
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codecomment}{RGB}{106,153,85}
+\definecolor{codekey}{RGB}{0,0,200}
+\definecolor{codestr}{RGB}{163,21,21}
+\lstset{
+backgroundcolor=\color{codebg},
+basicstyle=\ttfamily\footnotesize,
+breaklines=true,
+breakatwhitespace=false,
+columns=flexible,
+keepspaces=true,
+commentstyle=\color{codecomment},
+keywordstyle=\color{codekey}\bfseries,
+stringstyle=\color{codestr},
+showstringspaces=false,
+frame=single,
+rulecolor=\color{black!30},
+numbers=left,
+numberstyle=\tiny\color{black!50},
+xleftmargin=2em,
+framexleftmargin=1.5em,
+captionpos=b
+}
+
+\hypersetup{
+colorlinks=true,
+linkcolor=black,
+urlcolor=blue,
+citecolor=blue
+}
+
+\title{Project Final Report Team 4\\[0.5em]\large CAP 5610 Machine Learning}
+\author{
+    Project Title: Predicting Yelp Review Star Ratings: A Comparative Study of Traditional and Deep Learning Methods\\
+    Team Name/Number: \underline{\hspace{3in}}
+}
+\date{May 4, 2026}
+
+\begin{document}
+\sloppy
+
+\begin{center}
+    {\LARGE \textbf{Machine Learning Term Project}} \\[0.5em]
+    {\Large Final Report} \\[1em]
+    {\large Predicting Yelp Review Star Ratings: \\
+    A Comparative Study of Traditional and Deep Learning Methods} \\[1em]
+    Alexander Nardi, Anthony Mahon, Benedetto Falin, Keating Sane, Mohammed Mamdouh \\[0.4em]
+    May 4, 2026
+\end{center}
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+\newpage
+
+\section{Team Information}
+
+\subsection{Team Members and Roles}
+The project team consists of five members. Alexander Nardi served as the project coordinator. Each team member was responsible for one traditional machine-learning model and one deep-learning model, while the team jointly maintained the shared utilities, evaluation workflow, and final report.
+
+\subsection{Responsibility Distribution}
+Responsibilities were split by model family so that the full project covers five traditional models and five deep-learning models on the same Yelp review classification task. This distribution let each member develop one pair of models in depth while still contributing to a common experimental pipeline.
+
+\subsection{Team Assignment Table}
+\begin{table}[H]
+    \centering
+    \begin{tabularx}{\textwidth}{p{0.36\textwidth} Y}
+        \toprule
+        \textbf{Team Member}                  & \textbf{Models}                     \\
+        \midrule
+        Alexander Nardi (Project Coordinator) & Linear SVM, LSTM                    \\
+        Anthony Mahon                         & Kernel SVM, Transformer encoder     \\
+        Benedetto Falin                       & Naive Bayes, Multi Layer Perceptron \\
+        Keating Sane                          & Decision Tree/Random Forest, CNN    \\
+        Mohammed Mamdouh                      & Logistic Regression, LLM            \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+
+\newpage
+\section{Problem Setup}
+
+\subsection{Classification Task}
+
+
+\subsection{Dataset}
+
+
+\subsection{Dataset Size and Splits}
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Split      & Samples & Notes \\
+        \midrule
+        Training   &         &       \\
+        Validation &         &       \\
+        Testing    &         &       \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Input and Output Format}
+
+
+\subsection{Class Labels}
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Label ID & Class Name & Meaning \\
+        \midrule
+        0        &            &         \\
+        1        &            &         \\
+        2        &            &         \\
+        3        &            &         \\
+        4        &            &         \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Basic Dataset Statistics}
+
+
+\subsection{Project Goals}
+
+
+\section{Implementation Description}
+
+\subsection{Repository and Codebase Overview}
+
+\subsubsection{Repository Structure}
+
+\begin{verbatim}
+CAP5610TermProject/
+|- docs/
+|- utils/
+|- Logistic_Regression/
+|- Naive_Bayes/
+|- Decision_Tree/
+|- Random_Forest/
+|- Linear_SVM/
+|- Kernel_SVM/
+|- MultiLayer_Perceptron/
+|- CNN/
+|- Transformers/
+|- Large_Language_Model/
+|- README.md
+`- requirements.txt
+\end{verbatim}
+
+\subsubsection{Shared Utilities}
+
+
+\subsubsection{Model Specific Folders}
+
+
+\subsubsection{Reproducibility Assets}
+
+\subsection{Data Preparation and Experimental Pipeline}
+
+\subsubsection{Data Loading Workflow}
+
+
+\subsubsection{Training/Validation/Test Protocol}
+
+
+\subsubsection{Text Preprocessing}
+
+
+\subsubsection{Feature Engineering}
+
+
+\subsubsection{Randomness and Reproducibility}
+
+
+\subsubsection{Hyperparameter Tuning Workflow}
+
+\subsection{Traditional Machine Learning Models}
+
+\subsubsection{Logistic Regression}
+\textbf{Folder/Script:} \texttt{Logistic\_Regression/Logistic\_Regression.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Naive Bayes}
+\textbf{Folder/Script:} \texttt{Naive\_Bayes/naive\_bayes.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Decision Tree}
+\textbf{Folder/Script:} \texttt{Decision\_Tree/Decision\_Tree.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Random Forest}
+\textbf{Folder/Script:} \texttt{Random\_Forest/Random\_Forest.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Linear SVM}
+\textbf{Folder/Script:} \texttt{Linear\_SVM/Linear\_SVM.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Kernel SVM}
+\textbf{Folder/Script:} \texttt{Kernel\_SVM/Kernel\_SVM.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsection{Deep Learning Models}
+
+\subsubsection{Multi-Layer Perceptron}
+\textbf{Folder/Script:} \texttt{MultiLayer\_Perceptron/ml\_perceptron.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Architecture}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Convolutional Neural Network}
+\textbf{Folder/Script:} \texttt{CNN/CNN.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Architecture}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Transformer (Encoder Only)}
+\textbf{Folder/Script:} \texttt{Transformers/Transformers.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Input Representation}
+
+
+\paragraph{Architecture}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsubsection{Large Language Model (Decoder Only)}
+\textbf{Folder/Script:} \texttt{Large\_Language\_Model/Large\_Language\_Model.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Pretrained Backbone}
+
+
+\paragraph{Tokenization and Input Format}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
+
+\subsection{Cross-Model Engineering Choices}
+
+\subsubsection{Common CLI Design}
+
+
+\subsubsection{Logging and Artifact Saving}
+
+
+\subsubsection{Hardware/Runtime Considerations}
+
+\section{Usage Guide}
+
+
+
+\subsection{Environment Setup}
+
+\subsubsection{Prerequisites}
+
+
+\subsubsection{Installation}
+
+\begin{verbatim}
+pip install -r requirements.txt
+\end{verbatim}
+
+\subsubsection{Dataset Access}
+
+
+\subsection{Common Run Modes}
+
+\begin{longtable}{p{0.18\textwidth} p{0.32\textwidth} p{0.38\textwidth}}
+    \toprule
+    Flag               & Purpose & Notes \\
+    \midrule
+    \texttt{--tune}    &         &       \\
+    \texttt{--final}   &         &       \\
+    \texttt{--discard} &         &       \\
+    \texttt{--default} &         &       \\
+    \bottomrule
+\end{longtable}
+
+\subsection{How to Run Each Model}
+
+\subsubsection{Logistic Regression}
+\begin{verbatim}
+python Logistic_Regression/Logistic_Regression.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Naive Bayes}
+\begin{verbatim}
+python Naive_Bayes/naive_bayes.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Decision Tree}
+\begin{verbatim}
+python Decision_Tree/Decision_Tree.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Random Forest}
+\begin{verbatim}
+python Random_Forest/Random_Forest.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Linear SVM}
+\begin{verbatim}
+python Linear_SVM/Linear_SVM.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Kernel SVM}
+\begin{verbatim}
+python Kernel_SVM/Kernel_SVM.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Multi-Layer Perceptron}
+\begin{verbatim}
+python MultiLayer_Perceptron/ml_perceptron.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Convolutional Neural Network}
+\begin{verbatim}
+python CNN/CNN.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Transformer (Encoder Only)}
+\begin{verbatim}
+python Transformers/Transformers.py 
+\end{verbatim}
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsubsection{Large Language Model (Decoder Only)}
+\begin{verbatim}
+python Large_Language_Model/Large_Language_Model.py 
+\end{verbatim}
+
+Additional flags to document:
+
+Inputs: \\
+Outputs: \\
+Artifacts produced:
+
+\subsection{Expected Output Files}
+
+\begin{longtable}{p{0.28\textwidth} p{0.32\textwidth} p{0.28\textwidth}}
+    \toprule
+    File Type                & Example Locations & Purpose \\
+    \midrule
+    Best configuration JSON  &                   &         \\
+    Tuning logs              &                   &         \\
+    Results logs             &                   &         \\
+    Confusion matrix figures &                   &         \\
+    Saved model checkpoints  &                   &         \\
+    \bottomrule
+\end{longtable}
+
+\section{Evaluation Metrics}
+
+\subsection{Notation}
+
+
+\subsection{Accuracy}
+\textbf{Formula:}
+\[
+    \text{}
+\]
+\textbf{Interpretation:}
+
+\subsection{Macro Precision}
+\textbf{Formula:}
+\[
+    \text{}
+\]
+\textbf{Interpretation:}
+
+\subsection{Macro Recall}
+\textbf{Formula:}
+\[
+    \text{}
+\]
+\textbf{Interpretation:}
+
+\subsection{Macro F1-Score}
+\textbf{Formula:}
+\[
+    \text{}
+\]
+\textbf{Interpretation:}
+
+\subsection{Confusion Matrix}
+\textbf{Definition/Formula:}
+\[
+    \text{}
+\]
+\textbf{Interpretation:}
+
+\subsection{Why These Metrics Fit This Project}
+
+
+\section{Results}
+
+\subsection{Validation Experiments}
+
+
+\subsection{Final Experiments}
+
+
+\subsection{Hardware and Software Environment}
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{ll}
+        \toprule
+        Item          & Value \\
+        \midrule
+        OS            &       \\
+        Python        &       \\
+        CPU           &       \\
+        GPU           &       \\
+        Key Libraries &       \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Tuning Budget}
+
+
+\subsection{Experiment Tracking}
+
+
+\subsection{Comparison Table}
+
+\begin{longtable}{p{0.18\textwidth} p{0.08\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.14\textwidth}}
+    \toprule
+    Model                  & Split & Accuracy & Macro Precision & Macro Recall & Macro F1 & Runtime & Notes \\
+    \midrule
+    Logistic Regression    &       &          &                 &              &          &         &       \\
+    Naive Bayes            &       &          &                 &              &          &         &       \\
+    Decision Tree          &       &          &                 &              &          &         &       \\
+    Random Forest          &       &          &                 &              &          &         &       \\
+    Linear SVM             &       &          &                 &              &          &         &       \\
+    Kernel SVM             &       &          &                 &              &          &         &       \\
+    Multi-Layer Perceptron &       &          &                 &              &          &         &       \\
+    CNN                    &       &          &                 &              &          &         &       \\
+    Transformer            &       &          &                 &              &          &         &       \\
+    Large Language Model   &       &          &                 &              &          &         &       \\
+    \bottomrule
+\end{longtable}
+
+\subsection{Per-Model Result Summaries}
+
+\subsubsection{Logistic Regression}
+
+
+\subsubsection{Naive Bayes}
+
+
+\subsubsection{Decision Tree}
+
+
+\subsubsection{Random Forest}
+
+
+\subsubsection{Linear SVM}
+
+
+\subsubsection{Kernel SVM}
+
+
+\subsubsection{Multi-Layer Perceptron}
+
+
+\subsubsection{Convolutional Neural Network}
+
+
+\subsubsection{Transformer}
+
+
+\subsubsection{Large Language Model}
+
+
+\subsection{Visualizations}
+
+\subsubsection{Confusion Matrices}
+
+
+\subsubsection{Tuning Curves/Loss Curves/Accuracy Curves}
+
+
+\subsection{Comparative Discussion}
+
+\subsubsection{Best-Performing Models}
+
+
+\subsubsection{Worst-Performing Models}
+
+
+\subsubsection{Traditional ML vs. Deep Learning}
+
+
+\subsubsection{Performance vs. Compute Tradeoffs}
+
+
+\subsubsection{Error Patterns}
+
+
+\section{Conclusions \& Future Work}
+
+\subsection{Key Findings}
+
+
+\subsection{Lessons Learned}
+
+
+\subsection{Limitations}
+
+
+\subsection{Future Improvements}
+
+
+\subsection{Final Takeaway}
+
+
+\section{Included Code}
+
+\subsection{Whats Included in the Submission}
+
+
+\subsection{Reproducibility Notes}
+
+
+\subsection{File Inventory}
+
+\begin{longtable}{p{0.32\textwidth} p{0.56\textwidth}}
+    \toprule
+    Path/Folder                      & Purpose \\
+    \midrule
+    \texttt{utils/}                  &         \\
+    \texttt{Logistic\_Regression/}   &         \\
+    \texttt{Naive\_Bayes/}           &         \\
+    \texttt{Decision\_Tree/}         &         \\
+    \texttt{Random\_Forest/}         &         \\
+    \texttt{Linear\_SVM/}            &         \\
+    \texttt{Kernel\_SVM/}            &         \\
+    \texttt{MultiLayer\_Perceptron/} &         \\
+    \texttt{CNN/}                    &         \\
+    \texttt{Transformers/}           &         \\
+    \texttt{Large\_Language\_Model/} &         \\
+    \texttt{requirements.txt}        &         \\
+    \texttt{README.md}               &         \\
+    \bottomrule
+\end{longtable}
+
+\end{document}
