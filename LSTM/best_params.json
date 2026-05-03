@@ -1,0 +1,21 @@
+{
+  "params": {
+    "max_vocab": 30000,
+    "max_len": 512,
+    "embed_dim": 300,
+    "hidden_dim": 256,
+    "num_layers": 2,
+    "bidirectional": true,
+    "dropout": 0.2767911832239808,
+    "lr": 0.0005444120936367603,
+    "batch_size": 64,
+    "epochs": 4
+  },
+  "metadata": {
+    "seed": 0,
+    "tuning_train_size": 50000,
+    "tuning_val_split": 0.1,
+    "tuning_trials": 15
+  },
+  "macro_f1": 0.5974024117949626
+}
