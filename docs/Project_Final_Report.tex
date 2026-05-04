@@ -116,49 +116,60 @@ citecolor=blue
 
 \subsection{Classification Task}
 
+The task is five-class single-label text classification. Given the raw text of a Yelp review, the model must predict the star rating the reviewer assigned, which is one of five ordinal classes ranging from 1 star to 5 stars. Each review belongs to exactly one class. The ordinal structure of the labels means that misclassifying a 1-star review as 2-star is a smaller error than misclassifying it as 5-star, though all standard metrics used here treat all misclassifications equally.
 
 \subsection{Dataset}
 
+The dataset used is \textbf{Yelp Review Full}, a large-scale sentiment classification benchmark compiled from the 2015 Yelp Dataset Challenge. It consists of English-language Yelp business reviews paired with their star ratings. Reviews vary considerably in length, from a single sentence to several paragraphs, and cover a wide range of business categories. The dataset is publicly available through HuggingFace Datasets under the identifier \texttt{yelp\_review\_full}.
 
 \subsection{Dataset Size and Splits}
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \begin{tabular}{lll}
         \toprule
-        Split      & Samples & Notes \\
+        Split      & Samples   & Notes \\
         \midrule
-        Training   &         &       \\
-        Validation &         &       \\
-        Testing    &         &       \\
+        Training   & 585,000   & 90\% of the official 650,000-review training partition \\
+        Validation & 65,000    & 10\% stratified split carved from the training partition \\
+        Testing    & 50,000    & Official held-out test partition, never seen during tuning \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \subsection{Input and Output Format}
 
+\textbf{Input:} Raw English review text as a variable-length string. No manual preprocessing is required before passing to the data loader. Sparse feature models (Naive Bayes, MLP, SVM, Logistic Regression, Decision Tree, Random Forest) convert this text to a fixed-size TF-IDF vector via the shared \texttt{fit\_tfidf\_features()} utility. Sequence models tokenize and index the text into fixed-length integer sequences.
+
+\textbf{Output:} A single integer class prediction in the range $\{0, 1, 2, 3, 4\}$, corresponding to star ratings 1 through 5. Labels are zero-indexed internally throughout the codebase; the mapping to human-readable star ratings is applied only at evaluation and display time.
 
 \subsection{Class Labels}
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \begin{tabular}{lll}
         \toprule
         Label ID & Class Name & Meaning \\
         \midrule
-        0        &            &         \\
-        1        &            &         \\
-        2        &            &         \\
-        3        &            &         \\
-        4        &            &         \\
+        0        & 1 star     & Very negative review \\
+        1        & 2 stars    & Negative review \\
+        2        & 3 stars    & Mixed or neutral review \\
+        3        & 4 stars    & Positive review \\
+        4        & 5 stars    & Very positive review \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \subsection{Basic Dataset Statistics}
 
+The dataset is approximately balanced across all five classes. Each class accounts for exactly 20\% of both the training and test partitions, with minor variation. Training class counts are approximately 130,000 reviews per class before the validation split is carved out. This near-uniform distribution means accuracy is a meaningful primary metric and no class weighting or oversampling is required.
+
+Reviews vary substantially in length. Short reviews of one to two sentences are common in the extreme rating classes (1 star and 5 stars), where the reviewer's sentiment is unambiguous and concisely expressed. Middle-rating reviews (2, 3, and 4 stars) tend to be longer and more qualified, mixing positive and negative observations, which contributes to the difficulty of separating these classes.
 
 \subsection{Project Goals}
+
+The primary goal is to implement and compare ten machine learning models spanning traditional and deep learning approaches on a shared text classification benchmark. Each model is evaluated under a consistent experimental protocol using the same dataset splits, evaluation metrics, and result logging infrastructure. The secondary goal is to quantify the tradeoff between model complexity, input representation quality, and predictive performance, with particular attention to how much improvement sequence-aware deep learning models provide over bag-of-words baselines.
+
 
 
 \section{Implementation Description}
@@ -167,50 +178,90 @@ citecolor=blue
 
 \subsubsection{Repository Structure}
 
-\begin{verbatim}
+The codebase is organized such that each model is in its own directory and utilities that are shared across several models are found in \texttt{utils/}:
+
+\vspace{0.5em}
+
+\begin{lstlisting}[language=bash]
 CAP5610TermProject/
-|- docs/
-|- utils/
-|- Logistic_Regression/
-|- Naive_Bayes/
-|- Decision_Tree/
-|- Random_Forest/
-|- Linear_SVM/
-|- Kernel_SVM/
-|- MultiLayer_Perceptron/
-|- CNN/
-|- Transformers/
-|- Large_Language_Model/
-|- README.md
-`- requirements.txt
-\end{verbatim}
+|-- Linear_SVM/
+|-- Kernel_SVM/
+|-- Naive_Bayes/
+|-- Decision_Tree/
+|-- Random_Forest/
+|-- Logistic_Regression/
+|-- LSTM/
+|-- MultiLayer_Perceptron/
+|-- CNN/
+|-- Transformers/
+|-- Large_Language_Model/
+|-- utils/
+|-- requirements.txt
+`-- README.md
+\end{lstlisting}
 
 \subsubsection{Shared Utilities}
 
+The \texttt{utils/} package exports a common API that all models scripts can utilize:
 
-\subsubsection{Model Specific Folders}
+\vspace{0.5em}
 
+\begin{lstlisting}[language=bash]
+utils/
+|-- args.py                    # common CLI flags
+|-- data.py                    # HuggingFace yelp_review_full loader + split
+|-- embeddings.py              # GloVe / fastText loaders for CNN
+|-- evaluation.py              # metrics, plots, results logging
+|-- randomness.py              # DEFAULT_SEED, set_random
+|-- text_features.py           # shared TF-IDF vectorizer
+|-- timer.py                   # timed_step context manager
+`-- tuning.py                  # Optuna driver + best-config persistence
+\end{lstlisting}
 
-\subsubsection{Reproducibility Assets}
+\subsubsection{Model Specific Directories}
+
+Each model's directory contains its script, a tuning log, a results log, a saved best-config, and a confusion matrix for the best final result. For example, \texttt{CNN/}:
+
+\vspace{0.5em}
+
+\begin{lstlisting}[language=bash]
+CNN/
+|-- CNN.py                     # runnable model script
+|-- confusion_matrix_cnn.png   # confusion matrix from best final run
+|-- best_config.json           # winning hyperparameters from tuning
+|-- results_log.md             # every runs metrics, params, runtime
+`-- tuning_log.md              # every Optuna trials params + score
+\end{lstlisting}
 
 \subsection{Data Preparation and Experimental Pipeline}
 
 \subsubsection{Data Loading Workflow}
 
+All models read the dataset through a single entry point: \texttt{utils.data.load\_yelp\_data()}, which calls \texttt{datasets.load\_dataset("yelp\_review\_full")}. The dataset downloads on first use and is cached locally. Following runs then read from cache.
 
 \subsubsection{Training/Validation/Test Protocol}
 
+The official split of the dataset is 650,000 training reviews and 50,000 test reviews. The loader then takes an additional validation split (by default 10\%) out of the training partition using \texttt{sklearn.model\_selection.train\_test\_split}. The test partition is never touched during tuning. Validation runs use a default 150,000-review subsample of training data for fast iteration; final runs use the full 650,000-review training set (unless specified otherwise for some models) and evaluate on the held-out 50,000-review test partition (triggered by \texttt{--final}).
 
 \subsubsection{Text Preprocessing}
 
+Sparse-feature models (Logistic Regression, Naive Bayes, Decision Tree, Random Forest, Linear/Kernel SVM, MLP) consume TF--IDF features built directly from raw review text by \texttt{TfidfVectorizer}, which lowercases, tokenizes, and applies \texttt{strip\_accents="unicode"} internally. Sequence models (CNN, LSTM, Transformer) lowercase the text and replace punctuation with whitespace before tokenizing on whitespace, then map tokens to fixed-size index sequences (CNN: \texttt{max\_len = 256};  LSTM: \texttt{max\_len = 512}; Transformer: \texttt{max\_len = 160}). Tokens outside of the vocabulary collapse to \texttt{<unk>} and zero-padded positions are masked at the embedding layer. The decoder-only LLM (default \texttt{distilgpt2}) bypasses this pipeline entirely and instead applies the model's pretrained HuggingFace \texttt{AutoTokenizer} (subword BPE) directly to the raw text, padding/truncating to \texttt{max\_length = 256}.
 
 \subsubsection{Feature Engineering}
 
+\textbf{TF--IDF:} \texttt{fit\_tfidf\_features()} fits a single \texttt{TfidfVectorizer} with \texttt{sublinear\_tf=True} (dampens the contribution of repeated words within a review via $1 + \log(\text{tf})$) and four tunable parameters: \texttt{max\_features} (cap on the vocabulary size), \texttt{ngram\_range} (whether to include bigrams in addition to unigrams), \texttt{min\_df} (drop terms appearing in fewer than this many documents, removing rare/typo tokens), and \texttt{max\_df} (drop terms appearing in more than this fraction of documents, removing extremely common words). Final feature dimensionalities range from 10,000 (MLP) to 40,000 (Decision Tree, Random Forest, Logistic Regression).
+
+\textbf{Word vocabulary:} Each word-level sequence model builds its own top $N$ vocabulary from the training text with index 0 reserved for the padding token (\texttt{<pad>}) and index 1 reserved for the unknown word token (\texttt{<unk>}). CNN: 25,000 words (fixed); LSTM: 30,000 words (tuned over 10k--75k); Transformer: 15,000 words (tuned over 15k--30k). Reviews are truncated or zero-padded to the model's \texttt{max\_len}.
+
+\textbf{Embeddings:} The CNN supports either a randomly initialized 256-dimensional embedding lookup (trained from scratch) or one of several pretrained sources: GloVe 6B 100d/300d, GloVe 42B 300d, GloVe 2024 WikiGigaword 300d, and fastText wiki-news subword 300d, which can all be selected with mutually exclusive CLI flags. Pretrained matrices are loaded into the embedding layer at model construction time. The LSTM uses a trainable \texttt{nn.Embedding} lookup tuned over {128, 256, 300} dimensions with no pretrained option. The Transformer learns both token and positional embeddings from scratch (token embedding tuned over {128, 256} dimensions, positional embedding sized to \texttt{max\_len}). The decoder-only LLM gets its subword embeddings from the pretrained \texttt{distilgpt2} checkpoint and tunes them jointly with the rest of the model.
 
 \subsubsection{Randomness and Reproducibility}
 
+A single global seed (\texttt{DEFAULT\_SEED = 0}) is set at the start of every run via \texttt{set\_random\_seed()}, which seeds all of the following: Python's \texttt{random}, NumPy, and Torch (including CUDA), and pins \texttt{torch.backends.cudnn.deterministic = True} with \texttt{benchmark = False}. The same seed is passed into the dataset splitter and into every Optuna study, so re-running any script reproduces the same train/validation split and the same trial order.
 
 \subsubsection{Hyperparameter Tuning Workflow}
+
+Tuning is invoked with the \texttt{--tune} flag and uses Optuna Bayesian optimization through \texttt{utils.tuning.tune\_model()}. Each model defines an \texttt{objective()} that samples a configuration, builds features, trains on a subset of the training data ranging from roughly 6,000 reviews (LLM) to 650,000 reviews (CNN, Linear SVM) depending on the model's compute cost per trial, and returns macro-F1 on the validation split. Trial budgets range from 6 (Logistic Regression) to 30 (CNN), with most models in the 15--20 range. When tuning completes, \texttt{save\_best\_config()} writes the winning configuration plus metadata (seed, embedding source, train size, validation split, trial count, best macro-F1) to \texttt{best\_config.json}, and the tuning helper appends a Markdown summary of all trials to \texttt{tuning\_log.md}. Following runs load that JSON automatically unless \texttt{--default} is passed. Naive Bayes is the exception: \texttt{--tune} runs a manual alpha sweep over a fixed grid rather than an Optuna study, and writes \texttt{nb\_alpha\_sweep.png} instead of a tuning log.
 
 \subsection{Traditional Machine Learning Models}
 
@@ -238,69 +289,62 @@ CAP5610TermProject/
 
 \subsubsection{Naive Bayes}
 \textbf{Folder/Script:} \texttt{Naive\_Bayes/naive\_bayes.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Benedetto Falin
 
-\paragraph{Model Description}
+\paragraph{Model Description:}
+Complement Naive Bayes (CNB) from \texttt{sklearn.naive\_bayes.ComplementNB}. CNB is a variant of Multinomial Naive Bayes that estimates class-conditional probabilities using the \textit{complement} of each class rather than the class itself. For each class $c$, it computes the likelihood of a feature given all other classes combined, which has been shown to produce better-calibrated weight estimates on imbalanced or heavily overlapping text corpora than standard Multinomial NB. The model assumes conditional independence of features given the class label (the Naive Bayes assumption), meaning word co-occurrence and order are not modeled.
 
+\paragraph{Input Representation:}
+TF-IDF vectors produced by the shared \texttt{fit\_tfidf\_features()} helper with \texttt{sublinear\_tf=True}, \texttt{max\_features = 20{,}000}, \texttt{ngram\_range = (1, 2)}, \texttt{min\_df = 5}, \texttt{max\_df = 0.9}. Bigrams are included so that two-word phrases such as ``not good'' or ``really great'' are represented as single features, partially compensating for the model's inability to reason about word order at inference time. The resulting sparse matrix is passed directly to the sklearn fit and predict methods with no further transformation.
 
-\paragraph{Input Representation}
+\paragraph{Training Procedure:}
+CNB training is a single-pass frequency count followed by a log-probability computation -- there is no iterative optimization. Final runs fit on the full 585,000-review training partition and evaluate on the 50,000-review test partition. Validation runs use the 150,000-review subsample with a 10\% validation split for the alpha sweep. Training is CPU-only and completes in under 30 seconds on the full partition.
 
+\paragraph{Hyperparameters:}
+The only tunable model hyperparameter is \texttt{alpha}, the Laplace/Lidstone additive smoothing coefficient. Higher alpha values add more probability mass to unseen feature-class combinations, preventing zero-probability estimates that would dominate the log-likelihood. The four TF-IDF parameters listed above are fixed rather than tuned for this model.
 
-\paragraph{Training Procedure}
+\paragraph{Tuning Strategy:}
+Rather than Optuna, a manual grid sweep over a fixed list of alpha values is performed when \texttt{--tune} is passed:
+\[
+\alpha \in \{0.01,\ 0.05,\ 0.1,\ 0.3,\ 0.5,\ 1.0,\ 2.0,\ 5.0,\ 10.0,\ 15.0,\ 20.0,\ 25.0,\ 30.0,\ 35.0,\ 40.0,\ 45.0\ 50.0\}
+\]
+For each candidate, the model is fit on the training subset and validation accuracy is recorded. The alpha achieving the highest validation accuracy is saved to \texttt{nb\_best\_config.json} and used for all subsequent runs. A validation accuracy versus alpha plot is saved as \texttt{nb\_alpha\_sweep.png}. The best alpha found was \textbf{45}. This value is higher than what was observed under the original unigram-only pipeline (where alpha of 30 was optimal), and the increase is attributable to the addition of bigrams in the TF-IDF feature set. Bigram features are considerably more sparse than unigram where a phrase like ``not great'' appears far less frequently than either constituent word, which reduces the average discriminative reliability of individual features and requires heavier smoothing to prevent the model from over-fitting to noisy frequency counts.
 
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
+\paragraph{Implementation Notes:}
+The unusually high optimal alpha is an interpretable finding in itself. Standard smoothing values (0.1 to 1.0) are sufficient when classes are well-separated in feature space. The fact that alpha must reach 45 before validation accuracy peaks indicates that individual word frequencies are weak discriminators across the five classes and heavy smoothing is needed to prevent the model from over-committing to any single term. This is consistent with the known difficulty of the middle star ratings (2, 3, and 4 stars), where reviews share substantial vocabulary regardless of the assigned rating.
 
 
 \subsubsection{Decision Tree}
 \textbf{Folder/Script:} \texttt{Decision\_Tree/Decision\_Tree.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Keating Sane
 
-\paragraph{Model Description}
+\textbf{Model Description:} A single decision tree classifier from \texttt{sklearn.tree.DecisionTreeClassifier}. The tree is built top-down by repeatedly choosing one TF--IDF feature and a threshold that best separates the five star-rating classes (using Gini impurity), then recursing on each side. Predictions follow the chain of feature-vs-threshold tests from the root to a leaf, where the majority class is returned. Implemented as a baseline against the bagged ensemble (Random Forest).
 
+\textbf{Input Representation:} TF--IDF vectors produced by the shared \texttt{fit\_tfidf\_features()} helper with \texttt{sublinear\_tf=True}, \texttt{max\_features = 40,000}, \texttt{ngram\_range = (1, 2)}, \texttt{min\_df = 10}, \texttt{max\_df = 0.9}. No additional preprocessing.
 
-\paragraph{Input Representation}
+\textbf{Training Procedure:} Final runs fit a single tree on the full 650,000-review training partition with the tuned config and evaluate on the 50,000-review test partition. Validation runs use a 150,000-review training subsample with a 10\% validation split for fast iteration. CPU-only.
 
+\textbf{Hyperparameters:} The tunable parameters are \texttt{max\_depth} (maximum tree depth, which caps model capacity and the rate at which the tree can carve up the feature space), \texttt{min\_samples\_leaf} (minimum training rows per leaf, which prevents the tree from creating tiny leaves that memorize individual reviews), and the four TF--IDF parameters listed above. The splitting criterion is sklearn's default Gini impurity.
 
-\paragraph{Training Procedure}
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 20 trials on a 200,000-review tuning subset (10\% validation split). Search space: \texttt{tfidf\_features} $\in$ \{5k, 10k, 20k, 40k\}, \texttt{ngram\_max} $\in$ \{1, 2\}, \texttt{min\_df} $\in$ \{3, 5, 10\}, \texttt{max\_df} $\in$ \{0.85, 0.9, 0.95\}, \texttt{max\_depth} $\in$ \{50, 100, 150, 300, None\}, \texttt{min\_samples\_leaf} $\in [1, 10]$. Macro-F1 on the validation split was the objective.
 
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
-
+\textbf{Implementation Notes:} Tree fitting on the 200k tuning subset takes well under a minute per trial on CPU, but the full 650k-review final fit grows to roughly an hour as the tree depth scales. With the best tuned settings, the model memorizes most of the training set: train accuracy is far above the macro-F1 it achieves on validation/test. The model was kept as an interpretable baseline to compare with the ensemble.
 
 \subsubsection{Random Forest}
 \textbf{Folder/Script:} \texttt{Random\_Forest/Random\_Forest.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Keating Sane
 
-\paragraph{Model Description}
+\textbf{Model Description:} Ensemble of decision trees from \texttt{sklearn.ensemble.RandomForestClassifier}. Each tree is fit on a bootstrap sample of the training rows with a random subset of features considered at every split (\texttt{max\_features = "sqrt"}); class predictions are averaged across the forest. The randomized feature subsampling reduces the variance that the single Decision Tree exhibits.
 
+\textbf{Input Representation:} TF--IDF vectors from \texttt{fit\_tfidf\_features()} with \texttt{sublinear\_tf=True}, \texttt{max\_features = 40,000}, \texttt{ngram\_range = (1, 2)}, \texttt{min\_df = 10}, \texttt{max\_df = 0.85}. Identical pipeline to the single tree, with a slightly tighter \texttt{max\_df}.
 
-\paragraph{Input Representation}
+\textbf{Training Procedure:} Final runs fit a 500-tree forest on the full 650,000-review training partition with the tuned config and evaluate on the 50,000-review test partition. Validation runs use a 150,000-review training subsample with a 10\% validation split. Tree fitting is parallelized across cores via \texttt{n\_jobs = -1}; CPU-only.
 
+\textbf{Hyperparameters:} The tunable parameters are mirrored from the Decision Tree, with two additions: \texttt{n\_estimators} (number of trees in the forest) and \texttt{max\_features} (number of features randomly considered at each split).
 
-\paragraph{Training Procedure}
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 20 trials on a 200,000-review tuning subset (10\% validation split). Search space mirrors the Decision Tree's parameters and adds \texttt{n\_estimators} $\in$ \{100, 200, 300, 500\} and \texttt{max\_features} $\in$ \{"sqrt", "log2"\}. Macro-F1 on the validation split was the objective.              
 
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
-
+\textbf{Implementation Notes:} A 500-tree forest on the 200k tuning subset fits in roughly three minutes per trial with \texttt{n\_jobs = -1}; the full 650k-review final fit grows to about 44 minutes. Bootstrap sampling plus the \texttt{max\_features = "sqrt"} per-split feature subset force each tree to see a different slice of the data and consider a different subset of words at every split, so the trees make different mistakes and the variance that the single Decision Tree exhibits averages out.
 
 \subsubsection{Linear SVM}
 \textbf{Folder/Script:} \texttt{Linear\_SVM/Linear\_SVM.py}\\
@@ -350,53 +394,65 @@ CAP5610TermProject/
 
 \subsubsection{Multi-Layer Perceptron}
 \textbf{Folder/Script:} \texttt{MultiLayer\_Perceptron/ml\_perceptron.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Benedetto Falin
 
-\paragraph{Model Description}
+\paragraph{Model Description:}
+A fully connected feedforward neural network implemented in PyTorch (\texttt{torch.nn.Sequential}). The MLP takes a fixed-size TF-IDF vector as input and learns a non-linear mapping to five class logits via two hidden layers with batch normalization, ReLU activations, and dropout regularization. Unlike Naive Bayes, the MLP can learn interactions between input features, but like all TF-IDF-based models it has no access to word order or sequential context. Trained end-to-end with cross-entropy loss via backpropagation.
 
+\paragraph{Input Representation:}
+TF-IDF vectors from the shared \texttt{fit\_tfidf\_features()} helper with \texttt{sublinear\_tf=True}, \texttt{max\_features = 10{,}000}, \texttt{ngram\_range = (1, 2)}, \texttt{min\_df = 5}, \texttt{max\_df = 0.9}. The sparse matrix is converted to a dense \texttt{float32} PyTorch tensor in chunks of 10,000 rows to avoid attempting a full dense allocation of approximately 20 GB. The resulting dense tensor is wrapped in a \texttt{TensorDataset} and served through a \texttt{DataLoader} with \texttt{pin\_memory=True} for efficient GPU transfer.
 
-\paragraph{Input Representation}
+\paragraph{Architecture:}
+\[
+\mathbb{R}^{10000} \xrightarrow{\text{Linear}} \mathbb{R}^{h_1} \xrightarrow{\text{BN, ReLU, Dropout}} \mathbb{R}^{h_2} \xrightarrow{\text{BN, ReLU, Dropout}} \mathbb{R}^{5}
+\]
+where $h_1$ and $h_2$ are tunable hidden layer widths. Batch normalization is applied before each ReLU to stabilize training and reduce sensitivity to the learning rate. No softmax is applied at the output; \texttt{nn.CrossEntropyLoss} applies the log-softmax internally. The default architecture uses $h_1 = 1024$, $h_2 = 512$.
 
+\paragraph{Training Procedure:}
+Optimizer is Adam with a \texttt{ReduceLROnPlateau} scheduler that halves the learning rate when validation accuracy does not improve for 2 consecutive epochs. Early stopping with patience of 3 halts training when validation accuracy has not improved for 3 consecutive epochs, and the best-validation-accuracy checkpoint is restored before evaluation. Final runs train on the full 585,000-review training partition for up to 15 epochs and evaluate on the 50,000-review test partition. Validation runs use the 150,000-review subsample.
 
-\paragraph{Architecture}
+\paragraph{Hyperparameters:}
+The tunable parameters and their Optuna search spaces are:
 
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Parameter       & Type        & Search Space \\
+        \midrule
+        \texttt{hidden1}       & Categorical & \{512, 1024, 2048\} \\
+        \texttt{hidden2}       & Categorical & \{256, 512\} \\
+        \texttt{dropout}       & Float       & $[0.1, 0.6]$ in steps of 0.1 \\
+        \texttt{lr}            & Float (log) & $[10^{-4},\ 5 \times 10^{-3}]$ \\
+        \texttt{weight\_decay} & Float (log) & $[10^{-5},\ 10^{-2}]$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
-\paragraph{Training Procedure}
-
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
+\paragraph{Tuning Strategy:}
+Optuna Bayesian optimization with 20 trials via \texttt{utils.tuning.tune\_model()}. Each trial trains for up to 5 epochs with patience of 2 on the 150,000-review validation subset and returns the best validation accuracy achieved. The TPE sampler biases subsequent trials toward configurations that performed well in earlier trials. The best configuration found was $h_1 = 512$, $h_2 = 512$, \texttt{dropout} $= 0.6$, \texttt{lr} $= 0.0001$, \texttt{weight\_decay} $= 5 \times 10^{-5}$, achieving a validation accuracy of 62.30\% versus the default baseline of 60.28\%.
 
 \paragraph{Implementation Notes}
+Early runs without early stopping exhibited severe overfitting: training accuracy climbed above 85\% while validation accuracy plateaued near 61\%, indicating the model's capacity far exceeds what the TF-IDF representation can supply in useful signal. Batch normalization and increased dropout (0.6 in the best config) were the two changes that most reduced the train/val gap. The performance ceiling near 61\% is consistent with published results for bag-of-words MLP approaches on Yelp Full and is attributed primarily to the loss of word order at the input stage rather than insufficient model capacity.
 
 
 \subsubsection{Convolutional Neural Network}
 \textbf{Folder/Script:} \texttt{CNN/CNN.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Keating Sane
 
-\paragraph{Model Description}
+\textbf{Model Description:} A Kim (2014) style TextCNN implemented in PyTorch. An embedding layer maps token indices to dense vectors, several 1D convolutional filters of different kernel widths run in parallel over the embedded sequence (acting as learned $n$-gram detectors), max-over-time pooling collapses each feature map to a single value per filter, the pooled outputs are concatenated, passed through dropout, and projected to five class logits via a fully connected layer. Trained end-to-end with cross-entropy loss.
 
+\textbf{Input Representation:} Reviews are lowercased, punctuation is replaced with whitespace, and the text is tokenized on whitespace. The training corpus produces a 25,000-word vocabulary with index 0 reserved for the padding token (\texttt{<pad>}) and index 1 reserved for the unknown-word token (\texttt{<unk>}). Each review is mapped to a 256-token index sequence (truncated or zero-padded). The embedding source is chosen at the CLI: either a randomly initialized 256-dimensional lookup (default) or one of five pretrained options: GloVe 6B 100d, GloVe 6B 300d, GloVe 42B 300d, GloVe 2024 WikiGigaword 300d, or fastText wiki-news subword 300d. Pretrained matrices are loaded directly into the embedding layer at model construction.
 
-\paragraph{Input Representation}
+\textbf{Architecture:} Embedding ($V \times E$) $\to$ parallel \texttt{Conv1d} filters at multiple kernel widths $\to$ ReLU $\to$ max-over-time pooling per filter $\to$ concatenate pooled outputs $\to$ dropout $\to$ fully connected layer producing 5-class logits. Padding positions are masked at the embedding via \texttt{padding\_idx = 0}. Optimizer is Adam; gradients are clipped to a max L2 norm of 1.0.
 
+\textbf{Training Procedure:} Final runs train on the full 650,000-review training partition and evaluate on the 50,000-review test partition. Validation runs use a 150,000-review training subsample with a 10\% validation split. Each epoch ends with a held-out validation pass that tracks the lowest-loss checkpoint; training stops early if validation loss has not improved for 3 consecutive epochs, and the lowest-loss checkpoint is restored before evaluation. Auto-selects MPS, CUDA, or CPU at startup.
 
-\paragraph{Architecture}
+\textbf{Hyperparameters:} The tunable parameters are \texttt{num\_filters} (number of feature maps per kernel width), \texttt{filter\_sizes} (the set of kernel widths run in parallel, wider filters capture longer $n$-grams), \texttt{dropout} (regularization on the concatenated feature vector before the fully connected layer), \texttt{lr} (Adam learning rate), \texttt{batch\_size}, and \texttt{epochs} (effective via early stopping). The embedding source is selected at the CLI rather than tuned; the choice is recorded in \texttt{best\_config.json}'s metadata so following runs can detect a mismatch.
 
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 30 trials on the full 650,000-review training partition (10\% validation split). Search space: \texttt{num\_filters} $\in$ \{100, 200, 300\}, \texttt{filter\_sizes} $\in$ \{"3,4,5", "2,3,4,5"\}, \texttt{dropout} $\in [0.2, 0.6]$, \texttt{lr} $\in [10^{-4}, 10^{-2}]$ (log scale), \texttt{batch\_size} $\in$ \{64, 128\}, \texttt{epochs} $\in [5, 15]$. Macro-F1 on the validation split was the objective. The best epoch identified by early stopping is written back into \texttt{best\_config.json} so final runs reproduce that training duration.
 
-\paragraph{Training Procedure}
-
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
-
+\textbf{Implementation Notes:} Training is GPU-bound; on an RTX 5090 a final fit on 650k reviews completes in under a minute per epoch. Because the embedding source materially affects training, the saved choice is recorded in \texttt{best\_config.json}'s metadata so following runs use the same embeddings the config was tuned with.
 
 \subsubsection{Transformer (Encoder Only)}
 \textbf{Folder/Script:} \texttt{Transformers/Transformers.py}\\
@@ -452,29 +508,42 @@ CAP5610TermProject/
 
 \subsubsection{Common CLI Design}
 
+Every model script imports \texttt{common\_parser()} from \texttt{utils.args}, which registers four shared flags: \texttt{--tune} (run hyperparameter search), \texttt{--final} (full training set, evaluate on the test partition), \texttt{--discard} (run without writing any artifacts), and \texttt{--default} (ignore any saved \texttt{best\_config.json} and use hard-coded defaults). Model-specific flags (e.g.\ the CNN's embedding-source selectors, the SVMs' \texttt{--size}, the LLM's checkpoint and resume flags) are layered on top of this shared parser. \texttt{--tune} is mutually exclusive with \texttt{--final} and \texttt{--default}.
 
 \subsubsection{Logging and Artifact Saving}
 
+Run output is structured by helpers in \texttt{utils.evaluation}: \texttt{print\_run\_header()} prints the model name and contextual info; \texttt{print\_value\_section()} prints the parameter table; \texttt{timed\_step()} prints elapsed time for each step during loading/training. After evaluation, \texttt{save\_results()} appends a Markdown section to \texttt{results\_log.md} with accuracy, macro-precision, macro-recall, macro-F1, runtime, parameters, and metadata; the same helper guards against overwriting a better run by comparing macro-F1 against the existing entry. For final runs, \texttt{plot\_confusion\_matrix()} writes a PNG figure into the model folder. \texttt{--discard} bypasses all writes.
 
 \subsubsection{Hardware/Runtime Considerations}
 
+Sparse feature models run on CPU and parallelize through \texttt{n\_jobs=-1} where supported. The CNN, LSTM, Transformer, MLP, and LLM auto-select MPS, CUDA, or CPU at startup and use a fixed size token batch loader. Final run hardware varied: NVIDIA RTX 5090 (Linear SVM, CNN), AMD Ryzen 7 9800X3D (Decision Tree, Random Forest), AMD Ryzen 7 7800X3D (Naive Bayes, MLP), Tesla T4 (Transformer), and Intel i7-1165G7 (Kernel SVM). Final runtimes are recorded per-run in each \texttt{results\_log.md}.
+
 \section{Usage Guide}
 
-
+This section explains how a user can setup our project to reproduce the results in this report.
 
 \subsection{Environment Setup}
 
 \subsubsection{Prerequisites}
 
+Python 3.11 or newer, \texttt{pip}, and roughly 5 GB of free disk space for the cached dataset and pretrained embedding files. A CUDA or MPS capable GPU is recommended for the CNN, Transformer, and LLM but is not required. All other models run on CPU.
 
 \subsubsection{Installation}
 
-\begin{verbatim}
+\begin{lstlisting}[language=bash]
+# clone
+git clone <repo-url> && cd CAP5610TermProject
+
+# create env (Python 3.11)
+python -m venv .venv && source .venv/bin/activate
+
+# install deps
 pip install -r requirements.txt
-\end{verbatim}
+\end{lstlisting}
 
 \subsubsection{Dataset Access}
 
+The dataset is fetched on first run via \texttt{datasets.load\_dataset("yelp\_review\_full")} from HuggingFace. No credentials or manual downloads are required; following runs read from the local HuggingFace cache. Pretrained GloVe and fastText files used by the CNN download on demand the first time a corresponding embedding flag is passed.
 
 \subsection{Common Run Modes}
 
@@ -482,109 +551,72 @@ pip install -r requirements.txt
     \toprule
     Flag               & Purpose & Notes \\
     \midrule
-    \texttt{--tune}    &         &       \\
-    \texttt{--final}   &         &       \\
-    \texttt{--discard} &         &       \\
-    \texttt{--default} &         &       \\
+    \texttt{--tune}    & Run the Optuna hyperparameter search and save the best config. & Trains on a model-specific subset and evaluates on the validation split. \\
+    \texttt{--final}   & Train on the full 650,000-review training partition (unless otherwise specified for some models) and evaluate on the 50,000 review test partition. & Loads the saved \texttt{best\_config.json} unless \texttt{--default} is passed. Writes a confusion matrix PNG. \\
+    \texttt{--discard} & Skip writing any artifacts (results log, tuning log, best config, confusion matrix). & Useful for debugging. \\
+    \texttt{--default} & Ignore saved \texttt{best\_config.json} and use the hard-coded defaults in the script. & Useful when rerunning with a different embedding source than the one the saved config was tuned with (e.g.\ CNN), or when comparing tuned vs.\ untuned baselines. \\
     \bottomrule
 \end{longtable}
 
+
 \subsection{How to Run Each Model}
 
-\subsubsection{Logistic Regression}
-\begin{verbatim}
-python Logistic_Regression/Logistic_Regression.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+Every model is invoked with \texttt{python <Directory>/<Script>.py} plus the desired flag combination. A typical workflow is to run \texttt{--tune} once to populate \texttt{best\_config.json}, then run \texttt{--final} to produce the test-set numbers reported in Section~\ref{sec:results}.
 
-\subsubsection{Naive Bayes}
-\begin{verbatim}
-python Naive_Bayes/naive_bayes.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+\textbf{Inputs:} raw review text loaded automatically from the HuggingFace cache; for the CNN, an optional pretrained embedding flag.\\[0.5em]
+\textbf{Outputs:} a printed run header, parameter table, timings, evaluation metrics, and (for final runs) a confusion matrix.\\[0.5em]
+\textbf{Artifacts produced:} an appended section in the models \texttt{results\_log.md}; for tuning runs, an appended section in \texttt{tuning\_log.md} and a refreshed \texttt{best\_config.json}; for final runs, \texttt{confusion\_matrix\_*.png}.
 
-\subsubsection{Decision Tree}
-\begin{verbatim}
-python Decision_Tree/Decision_Tree.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+\vspace{0.5em}
 
-\subsubsection{Random Forest}
-\begin{verbatim}
-python Random_Forest/Random_Forest.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+\begin{lstlisting}[language=bash]
+# Hyperparameter search (one time per model)
+python Logistic_Regression/Logistic_Regression.py --tune
+python Naive_Bayes/naive_bayes.py --tune
+python Decision_Tree/Decision_Tree.py --tune
+python Random_Forest/Random_Forest.py --tune
+python Linear_SVM/Linear_SVM.py --tune
+python Kernel_SVM/Kernel_SVM.py --tune
+python MultiLayer_Perceptron/ml_perceptron.py --tune
+python LSTM/LSTM.py --tune
+python CNN/CNN.py --tune --glove-2024-wikigiga
+python Transformers/Transformers.py --tune
+python Large_Language_Model/Large_Language_Model.py --tune
 
-\subsubsection{Linear SVM}
-\begin{verbatim}
-python Linear_SVM/Linear_SVM.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+# Final test-set evaluation using the saved best config
+python Logistic_Regression/Logistic_Regression.py --final
+python Naive_Bayes/naive_bayes.py --final
+python Decision_Tree/Decision_Tree.py --final
+python Random_Forest/Random_Forest.py --final
+python Linear_SVM/Linear_SVM.py --final
+python Kernel_SVM/Kernel_SVM.py --final
+python MultiLayer_Perceptron/ml_perceptron.py --final
+python LSTM/LSTM.py --final
+python CNN/CNN.py --final --glove-2024-wikigiga
+python Transformers/Transformers.py --final
+python Large_Language_Model/Large_Language_Model.py --final
 
-\subsubsection{Kernel SVM}
-\begin{verbatim}
-python Kernel_SVM/Kernel_SVM.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+# Debugging: validation-mode run without writing anything
+python CNN/CNN.py --discard --default
+\end{lstlisting}
 
-\subsubsection{Multi-Layer Perceptron}
-\begin{verbatim}
-python MultiLayer_Perceptron/ml_perceptron.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
-
-\subsubsection{Convolutional Neural Network}
-\begin{verbatim}
-python CNN/CNN.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
-
-\subsubsection{Transformer (Encoder Only)}
-\begin{verbatim}
-python Transformers/Transformers.py 
-\end{verbatim}
-Inputs: \\
-Outputs: \\
-Artifacts produced:
-
-\subsubsection{Large Language Model (Decoder Only)}
-\begin{verbatim}
-python Large_Language_Model/Large_Language_Model.py 
-\end{verbatim}
-
-Additional flags to document:
-
-Inputs: \\
-Outputs: \\
-Artifacts produced:
+\textbf{Additional flags.} A few models layer extra options on top of the four shared flags:
+\begin{itemize}
+    \item \textbf{CNN} (mutually exclusive embedding source selectors): \texttt{--glove-6b-100d}, \texttt{--glove-6b-300d}, \texttt{--glove-42b}, \texttt{--glove-2024-wikigiga}, \texttt{--fasttext-wiki-subword}. Omitting all of them uses a randomly initialized 256-dimensional embedding lookup.
+    \item \textbf{Linear SVM} and \textbf{Kernel SVM}: \texttt{--size N} overrides the training subset size (defaults: 650{,}000 for Linear SVM, 10{,}000 for Kernel SVM).
+    \item \textbf{Large Language Model}: \texttt{--model-name NAME} (default \texttt{distilgpt2}) chooses the decoder-only base model; \texttt{--smoke} runs a tiny model on a tiny subset for sanity checks; \texttt{--train-size N} overrides the non-final training subset size; \texttt{--trials N} sets the number of Optuna trials in \texttt{--tune} mode (default 8); \texttt{--resume} resumes from \texttt{Large\_Language\_Model/saved\_model} and \texttt{--resume-from PATH} resumes from an arbitrary checkpoint. \texttt{--tune} additionally blocks \texttt{--resume}/\texttt{--resume-from}, and \texttt{--final} blocks \texttt{--smoke}.
+\end{itemize}
 
 \subsection{Expected Output Files}
 
-\begin{longtable}{p{0.28\textwidth} p{0.32\textwidth} p{0.28\textwidth}}
+\begin{longtable}{p{0.18\textwidth} p{0.36\textwidth} p{0.34\textwidth}}
     \toprule
-    File Type                & Example Locations & Purpose \\
+    Type                     & Location & Purpose \\
     \midrule
-    Best configuration JSON  &                   &         \\
-    Tuning logs              &                   &         \\
-    Results logs             &                   &         \\
-    Confusion matrix figures &                   &         \\
-    Saved model checkpoints  &                   &         \\
+    Best configuration       & \texttt{<Model>/best\_config.json} & Hyperparameters and metadata from the most recent tuning run. \\
+    Tuning logs              & \texttt{<Model>/tuning\_log.md} & Markdown record of every Optuna trial, noting parameters, val macro-F1, and the runtime. Naive Bayes is the exception: it runs a manual alpha sweep producing \texttt{nb\_alpha\_sweep.png} instead. \\
+    Results logs             & \texttt{<Model>/results\_log.md} & Markdown record of every best validation and final run: accuracy, macro-precision/recall/F1, parameters, metadata, runtime. \\
+    Confusion matrix  & \texttt{<Model>/confusion\_matrix\_*.png} & PNG figure written on final runs. \\
     \bottomrule
 \end{longtable}
 
@@ -632,6 +664,7 @@ Artifacts produced:
 
 
 \section{Results}
+\label{sec:results}
 
 \subsection{Validation Experiments}
 
@@ -753,36 +786,5 @@ Artifacts produced:
 
 
 \subsection{Final Takeaway}
-
-
-\section{Included Code}
-
-\subsection{Whats Included in the Submission}
-
-
-\subsection{Reproducibility Notes}
-
-
-\subsection{File Inventory}
-
-\begin{longtable}{p{0.32\textwidth} p{0.56\textwidth}}
-    \toprule
-    Path/Folder                      & Purpose \\
-    \midrule
-    \texttt{utils/}                  &         \\
-    \texttt{Logistic\_Regression/}   &         \\
-    \texttt{Naive\_Bayes/}           &         \\
-    \texttt{Decision\_Tree/}         &         \\
-    \texttt{Random\_Forest/}         &         \\
-    \texttt{Linear\_SVM/}            &         \\
-    \texttt{Kernel\_SVM/}            &         \\
-    \texttt{MultiLayer\_Perceptron/} &         \\
-    \texttt{CNN/}                    &         \\
-    \texttt{Transformers/}           &         \\
-    \texttt{Large\_Language\_Model/} &         \\
-    \texttt{requirements.txt}        &         \\
-    \texttt{README.md}               &         \\
-    \bottomrule
-\end{longtable}
 
 \end{document}
