@@ -50,6 +50,7 @@
 \definecolor{codecomment}{RGB}{106,153,85}
 \definecolor{codekey}{RGB}{0,0,200}
 \definecolor{codestr}{RGB}{163,21,21}
+\newcommand{\TODO}[1][]{\textcolor{red}{[TODO#1]}}
 \lstset{
 backgroundcolor=\color{codebg},
 basicstyle=\ttfamily\footnotesize,
@@ -722,43 +723,56 @@ python CNN/CNN.py --discard --default
 
 \subsection{Notation}
 
+Let $N$ be the number of evaluated reviews and $K = 5$ the number of classes. For review $i$, let $y_i \in \{1,\dots,5\}$ be the true label and $\hat{y}_i$ the predicted label. For each class $c$, let $TP_c$, $FP_c$, and $FN_c$ denote the usual true positive, false positive, and false negative counts under a view of that class. These are the same quantities used by the shared \texttt{compute\_metrics()} helper in \texttt{utils/evaluation.py}.
+
 
 \subsection{Accuracy}
 \textbf{Formula:}
 \[
-    \text{}
+    \mathrm{Accuracy} = \frac{1}{N}\sum_{i=1}^{N} \mathbf{1}[y_i = \hat{y}_i]
 \]
 \textbf{Interpretation:}
+Accuracy is the fraction of reviews assigned the correct star rating. It is the easiest metric to read, but by itself it does not show whether a model is doing equally well across all five classes.
 
 \subsection{Macro Precision}
 \textbf{Formula:}
 \[
-    \text{}
+    \mathrm{MacroPrecision} = \frac{1}{K}\sum_{c=1}^{K} \frac{TP_c}{TP_c + FP_c}
 \]
 \textbf{Interpretation:}
+Precision for one class asks: when the model predicts class $c$, how often is it right? Macro precision averages that quantity equally over all five star ratings, so strong performance on the easy classes cannot fully hide weak precision on the harder middle ratings, which for our dataset rang especially true for differentiating 2-4 star ratings.
 
 \subsection{Macro Recall}
 \textbf{Formula:}
 \[
-    \text{}
+    \mathrm{MacroRecall} = \frac{1}{K}\sum_{c=1}^{K} \frac{TP_c}{TP_c + FN_c}
 \]
 \textbf{Interpretation:}
+Recall for one class asks: of the reviews that truly belong to class $c$, how many did the model recover? Macro recall gives every class the same weight, which makes it useful for checking whether the classifier is systematically missing certain star ratings.
 
-\subsection{Macro F1-Score}
+\subsection{Macro F1 Score}
 \textbf{Formula:}
 \[
-    \text{}
+    F1_c = \frac{2P_cR_c}{P_c + R_c},
+    \qquad
+    \mathrm{MacroF1} = \frac{1}{K}\sum_{c=1}^{K} F1_c
 \]
 \textbf{Interpretation:}
+Macro F1 combines precision and recall for each class, then averages the five class wise F1 values. This is the main score used for tuning in the repository because it rewards models that are consistently good across the label set rather than models that inflate one metric at the expense of the other.
 
 \subsection{Confusion Matrix}
 \textbf{Definition/Formula:}
 \[
-    \text{}
+    M_{ij} = \sum_{n=1}^{N} \mathbf{1}[y_n = i \ \land\ \hat{y}_n = j]
 \]
 \textbf{Interpretation:}
+Entry $M_{ij}$ counts how many reviews from true class $i$ were predicted as class $j$. In the saved figures, rows correspond to the true labels and columns correspond to the predicted labels. Unlike the scalar metrics above, the confusion matrix shows exactly where the errors occur, such as confusion between adjacent ratings like 3-star and 4-star reviews.
 
 \subsection{Why These Metrics Fit This Project}
+
+This project is a five balanced class text classification problem, so a single metric is not enough. Accuracy gives a clean overall summary, but it can hide whether the model mainly succeeds on the easy extreme ratings while struggling on the ambiguous middle ratings. Macro precision, macro recall, and macro F1 fix that by giving each class equal weight in the final score. That matters here because the practical difficulty is not just getting many predictions right; it is separating five closely related sentiment levels.
+
+The repository therefore logs all four scalar metrics on every run and uses macro F1 as the tuning objective. That choice is reasonable for this dataset as again, the labels are balanced, but the classes are not equally easy where differentiating 0 and 5 star reviews is much simpler than 2 and 3 star reviews. The confusion matrix then provides the missing detail by showing which star levels are being mixed up. Together, these metrics give both a concise summary and an error breakdown that is specific enough to compare very different model families fairly.
 
 
 \section{Results}

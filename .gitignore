@@ -28,7 +28,6 @@ Desktop.ini
 # Tex
 *.toc
 *.out
-*.pdf
 *.gz
 *.aux
 *.log
