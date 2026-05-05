@@ -584,13 +584,60 @@ Training is done via GPU (its recommended to have a strong NVIDIA GPU for CUDA c
 
 \textbf{Input Representation:} Reviews are lowercased, punctuation is replaced with whitespace, and the text is tokenized on whitespace. The training corpus produces a 25,000-word vocabulary with index 0 reserved for the padding token (\texttt{<pad>}) and index 1 reserved for the unknown-word token (\texttt{<unk>}). Each review is mapped to a 256-token index sequence (truncated or zero-padded). The embedding source is chosen at the CLI: either a randomly initialized 256-dimensional lookup (default) or one of five pretrained options: GloVe 6B 100d, GloVe 6B 300d, GloVe 42B 300d, GloVe 2024 WikiGigaword 300d, or fastText wiki-news subword 300d. Pretrained matrices are loaded directly into the embedding layer at model construction.
 
-\textbf{Architecture:} Embedding ($V \times E$) $\to$ parallel \texttt{Conv1d} filters at multiple kernel widths $\to$ ReLU $\to$ max-over-time pooling per filter $\to$ concatenate pooled outputs $\to$ dropout $\to$ fully connected layer producing 5-class logits. Padding positions are masked at the embedding via \texttt{padding\_idx = 0}. Optimizer is Adam; gradients are clipped to a max L2 norm of 1.0.
+\textbf{Architecture:}
+\[
+\text{Token indices}
+\to \text{Embedding}(V, E)
+\to \text{Conv1d}
+\to \text{MaxPool}
+\to \text{Concat}
+\to \text{Dropout}
+\to \mathbb{R}^{5}
+\]
+Several \texttt{Conv1d} filters of different kernel widths (\texttt{filter\_sizes}) run in parallel as learned $n$-gram detectors with ReLU activation; max-over-time pooling collapses each feature map to a single value per filter, and the pooled outputs are concatenated before the fully connected classifier. Padding positions are masked at the embedding via \texttt{padding\_idx = 0}. Optimizer is Adam; gradients are clipped to a max L2 norm of 1.0.
 
 \textbf{Training Procedure:} Final runs train on the full 650,000-review training partition and evaluate on the 50,000-review test partition. Validation runs use a 150,000-review training subsample with a 10\% validation split. Each epoch ends with a held-out validation pass that tracks the lowest-loss checkpoint; training stops early if validation loss has not improved for 3 consecutive epochs, and the lowest-loss checkpoint is restored before evaluation. Auto-selects MPS, CUDA, or CPU at startup.
 
-\textbf{Hyperparameters:} The tunable parameters are \texttt{num\_filters} (number of feature maps per kernel width), \texttt{filter\_sizes} (the set of kernel widths run in parallel, wider filters capture longer $n$-grams), \texttt{dropout} (regularization on the concatenated feature vector before the fully connected layer), \texttt{lr} (Adam learning rate), \texttt{batch\_size}, and \texttt{epochs} (effective via early stopping). The embedding source is selected at the CLI rather than tuned; the choice is recorded in \texttt{best\_config.json}'s metadata so following runs can detect a mismatch.
+\textbf{Hyperparameters:} The tunable parameters are \texttt{num\_filters} (number of feature maps per kernel width), \texttt{filter\_sizes} (the set of kernel widths run in parallel, wider filters capture longer $n$-grams), \texttt{dropout} (regularization on the concatenated feature vector before the fully connected layer), \texttt{lr} (Adam learning rate), \texttt{batch\_size}, and \texttt{epochs} (effective via early stopping). The embedding source is selected at the CLI rather than tuned; the choice is recorded in \texttt{best\_config.json}'s metadata so following runs can detect a mismatch. The Optuna search spaces are:
 
-\textbf{Tuning Strategy:} Optuna Bayesian optimization with 30 trials on the full 650,000-review training partition (10\% validation split). Search space: \texttt{num\_filters} $\in$ \{100, 200, 300\}, \texttt{filter\_sizes} $\in$ \{"3,4,5", "2,3,4,5"\}, \texttt{dropout} $\in [0.2, 0.6]$, \texttt{lr} $\in [10^{-4}, 10^{-2}]$ (log scale), \texttt{batch\_size} $\in$ \{64, 128\}, \texttt{epochs} $\in [5, 15]$. macro F1 on the validation split was the objective. The best epoch identified by early stopping is written back into \texttt{best\_config.json} so final runs reproduce that training duration.
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Parameter & Type & Search Space \\
+        \midrule
+        \texttt{num\_filters}  & Categorical & \{100, 200, 300\} \\
+        \texttt{filter\_sizes} & Categorical & \{"3,4,5", "2,3,4,5"\} \\
+        \texttt{dropout}       & Float       & $[0.2,\ 0.6]$ \\
+        \texttt{lr}            & Float (log) & $[10^{-4},\ 10^{-2}]$ \\
+        \texttt{batch\_size}   & Categorical & \{64, 128\} \\
+        \texttt{epochs}        & Integer     & $[5, 15]$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 30 trials on the full 650,000-review training partition (10\% validation split). Macro F1 on the validation split was the objective. The best epoch identified by early stopping is written back into \texttt{best\_config.json} so final runs reproduce that training duration.
+
+\textbf{Best Configuration:} The best configuration found via Optuna was:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{ll}
+        \toprule
+        Parameter & Value \\
+        \midrule
+        \texttt{embedding}     & GloVe 2024 WikiGigaword 300d \\
+        \texttt{num\_filters}  & 300 \\
+        \texttt{filter\_sizes} & \{2, 3, 4, 5\} \\
+        \texttt{dropout}       & 0.3454 \\
+        \texttt{lr}            & $3.41 \times 10^{-4}$ \\
+        \texttt{batch\_size}   & 128 \\
+        \texttt{epochs}        & 3 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+This configuration achieved a validation macro-F1 of \textbf{0.6440}.
 
 \textbf{Implementation Notes:} Training is GPU-bound; on an RTX 5090 a final fit on 650k reviews completes in under a minute per epoch. Because the embedding source materially affects training, the saved choice is recorded in \texttt{best\_config.json}'s metadata so following runs use the same embeddings the config was tuned with.
 
