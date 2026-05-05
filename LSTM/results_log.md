@@ -35,20 +35,20 @@
 
 ## LSTM (final, best config)
 
-- **Date:** 2026-05-02 23:01
+- **Date:** 2026-05-03 12:06
 - **Device:** NVIDIA GeForce RTX 4080 SUPER
-- **Accuracy:** 0.6673
-- **Macro Precision:** 0.6675
-- **Macro Recall:** 0.6673
-- **Macro F1:** 0.6673
-- **Time:** 5067.8s (84.5m)
+- **Accuracy:** 0.6679
+- **Macro Precision:** 0.6697
+- **Macro Recall:** 0.6679
+- **Macro F1:** 0.6687
+- **Time:** 9894.0s (164.9m)
 
 <details>
 <summary>Config</summary>
 
 **Params**
 - `max_vocab`: 30000
-- `max_len`: 512
+- `max_len`: 1024
 - `embed_dim`: 300
 - `hidden_dim`: 256
 - `num_layers`: 2

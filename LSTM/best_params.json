@@ -1,7 +1,7 @@
 {
   "params": {
     "max_vocab": 30000,
-    "max_len": 512,
+    "max_len": 1024,
     "embed_dim": 300,
     "hidden_dim": 256,
     "num_layers": 2,
