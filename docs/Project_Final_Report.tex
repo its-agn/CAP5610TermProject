@@ -963,7 +963,7 @@ learning rate $1.32\times10^{-4}$, weight decay $1.83\times10^{-5}$.\\
 \textbf{Observations.} The tuned MLP slightly beats logistic regression in accuracy and macro-F1, and its confusion matrix is broadly similar to the logistic regression matrix. It improves the diagonal for some classes, especially the extreme ratings, but the same adjacent-class ambiguity remains. The model still confuses 2-star reviews with 1-star or 3-star reviews and 4-star reviews with 5-star reviews. This suggests that nonlinear layers over TF--IDF add some capacity, but the sparse lexical representation itself still carries most of the signal.
 
 \subsubsection{LSTM}
-\textbf{Final hyperparameters:} \TODO[: fill final LSTM hyperparameters.]\\
+\textbf{Final hyperparameters:} \texttt{max\_vocab }$=30{,}000$, \texttt{max\_len }$=1024$, embedding dim 300, hidden dim 256, 2 layers, bidirectional, dropout $0.2768$, learning rate $5.44\times10^{-4}$, batch size 64, 4 epochs.\\
 \textbf{Test metrics:} Accuracy 0.6679, macro-F1 0.6687
 
 \begin{figure}[H]
@@ -973,7 +973,7 @@ learning rate $1.32\times10^{-4}$, weight decay $1.83\times10^{-5}$.\\
     \label{fig:confmat_lstm}
 \end{figure}
 
-\textbf{Observations.} \TODO[: Analyze the LSTM confusion matrix. Discuss whether sequential state helps with middle-class reviews, whether errors are mostly adjacent, and how the LSTM compares against CNN, Transformer, and TF--IDF baselines.]
+\textbf{Observations.} The bidirectional LSTM achieves 0.6679 accuracy and 0.6687 macro-F1, making it the second-best overall model and the strongest sequence model trained from scratch. Its confusion matrix shows a clear diagonal across all five classes, with 1-star (7,812 correct) and 5-star (7,086 correct) as the strongest entries. Notably, 3-star reviews reach 6,248 correct predictions---a substantially better result than the Transformer (4,193) and CNN (approximately 4,000)---demonstrating that the bidirectional recurrent state aggregates mixed-sentiment context more effectively than convolutional $n$-gram filters or self-attention alone without pre-trained embeddings. Errors remain predominantly adjacent-class: the largest off-diagonal entries are 2-star predicted as 1-star (1,820) and 4-star predicted as 5-star (2,057). The LSTM's strong performance relative to the Transformer despite a simpler architecture underscores that sequential hidden state is particularly well-suited to long reviews (up to 1,024 tokens), which the Transformer was forced to cap at 160 tokens due to compute constraints.
 
 \subsubsection{TextCNN}
 \textbf{Final hyperparameters:} GloVe 2024 WikiGigaword 300d embeddings, 300 filters, widths $\{2,3,4,5\}$,\\
@@ -987,7 +987,7 @@ dropout $0.3454$, learning rate $3.41\times10^{-4}$, batch size 128, 3 epochs.\\
     \label{fig:confmat_cnn}
 \end{figure}
 
-\textbf{Observations.} The TextCNN is the strongest measured model. Its confusion matrix has the clearest overall diagonal among the  measured models, with strong performance on 2-star, 3-star, and 5-star reviews compared with the traditional baselines. The dominant errors are still adjacent-rating confusions, especially 4-star reviews predicted as 3 or 5 stars and 5-star reviews predicted as 4 stars. This supports the conclusion that pre-trained word embeddings plus local convolutional features are effective for fine-grained Yelp sentiment, while the inherent ambiguity between neighboring ratings remains.
+\textbf{Observations.} The TextCNN is the strongest measured model among those that do not use a pre-trained language model backbone. Its confusion matrix has a clear diagonal, with strong performance on 2-star, 3-star, and 5-star reviews compared with the traditional baselines. The dominant errors are still adjacent-rating confusions, especially 4-star reviews predicted as 3 or 5 stars and 5-star reviews predicted as 4 stars. It is outperformed overall by the LSTM (macro-F1 0.6687) and the fine-tuned LLM (macro-F1 0.6701), confirming that recurrent sequential context and pre-trained language representations both provide signal beyond what convolutional $n$-gram filters capture.
 
 \subsubsection{Transformer Encoder}
 \textbf{Final hyperparameters:} 2 layers, 8 heads, embedding dimension 256, FFN dimension 256, dropout $0.2658$,\\
@@ -1002,10 +1002,10 @@ learning rate $6.50\times10^{-4}$, weight decay $3.14\times10^{-5}$, max length 
     \label{fig:confmat_transformer}
 \end{figure}
 
-\textbf{Observations.} The from-scratch Transformer beats several traditional baselines but is beaten by logistic regression, MLP, and TextCNN. Its confusion matrix shows a strong diagonal for 2-star, 4-star, and 5-star reviews, but weaker separation for 3-star reviews, which are often predicted as 2 or 4 stars. The model captures broad sentiment direction, but without external pre-training it does not separate fine-grained rating boundaries as well as the CNN with GloVe embeddings.
+\textbf{Observations.} The from-scratch Transformer beats several traditional baselines but is beaten by the MLP, Logistic Regression, TextCNN, LSTM, and fine-tuned LLM. Its confusion matrix shows a reasonable diagonal for extreme ratings, but weaker separation for 3-star reviews, which are often predicted as 2 or 4 stars. The 3-star recall in particular (4,193 correct) lags well behind the LSTM (6,248) and LLM (6,043), underscoring that both pre-trained representations and longer sequential context help resolve the mixed-sentiment signal that the Transformer's from-scratch, 160-token-capped architecture cannot fully exploit.
 
 \subsubsection{Fine-Tuned LLM}
-\textbf{Final hyperparameters:} \TODO[: fill final LLM hyperparameters.]\\
+\textbf{Final hyperparameters:} \texttt{distilgpt2} backbone, \texttt{max\_length }$=256$, 2 epochs, batch size 2, learning rate $1.28\times10^{-5}$, weight decay $5.33\times10^{-3}$, warmup ratio $0.0172$, grad accum steps 1.\\
 \textbf{Test metrics:} Accuracy 0.6711, macro-F1 0.6701.
 
 \begin{figure}[H]
@@ -1015,9 +1015,8 @@ learning rate $6.50\times10^{-4}$, weight decay $3.14\times10^{-5}$, max length 
     {Confusion matrix for the fine-tuned LLM final run.}
     \label{fig:confmat_llm}
 \end{figure}
-{Confusion matrix for the fine-tuned LLM final run.}
 
-\textbf{Observations.} \TODO[: Analyze the LLM confusion matrix. Discuss whether pre-trained contextual representations reduce middle-class confusion, whether adjacent-class errors still dominate, and how the LLM compares against TextCNN and Transformer.]
+\textbf{Observations.} The fine-tuned decoder-only LLM (distilgpt2) achieves 0.6711 accuracy and 0.6701 macro-F1, the best result across all eleven models. Its confusion matrix shows the sharpest diagonal in the comparison: 1-star reviews reach 7,928 correct (the highest single-class count of any model), and 5-star reviews reach 7,582 correct. The most striking improvement over other models is on 3-star reviews, which reach 6,043 correct---substantially better than the Transformer (4,193) and competitive with the LSTM (6,248). This confirms that pre-trained contextual representations from GPT-style language modeling capture the nuanced mixed-sentiment signal that is the primary source of difficulty in this task. Adjacent-class confusion still dominates the off-diagonal entries: 2-star predicted as 1-star (2,047) is the largest single error, and 4-star predicted as 5-star (2,345) is the next largest. Long-range errors (e.g., 1-star predicted as 5-star: only 61 cases) are negligibly rare, confirming all models capture broad sentiment direction. The main cost of the LLM's top performance is runtime: at 17,006 seconds (283 minutes) on an RTX 5070 Ti, it is approximately 75 times slower than the TextCNN while gaining only 2.9 points of macro-F1.
 
 \subsection{Hyperparameter Sensitivity}
 Selected examples of sensitivity observed in tuning:
@@ -1025,16 +1024,16 @@ Selected examples of sensitivity observed in tuning:
     \item \textbf{Linear SVM:} performance was only weakly sensitive to $C$ inside the explored range; the selected $C\approx0.11$ regularizes more aggressively than the default.
     \item \textbf{Decision Tree:} tree depth alone did not solve the sparse-feature mismatch; leaf-size regularization was necessary for stable validation performance.
     \item \textbf{Random Forest:} increasing to hundreds of trees improved over the default, with \texttt{max\_features}$=$\, sqrt selected by tuning.
-    \item \textbf{LSTM:} \TODO[: add sensitivity note for embedding size, hidden size, sequence length, or dropout.]
+    \item \textbf{LSTM:} sequence length was the most impactful parameter; tuning selected \texttt{max\_len}$=1024$, far exceeding initial defaults, capturing full review context that shorter windows miss. Embedding dimension (300 vs.\ 128) and bidirectionality both produced consistent gains; dropout was less sensitive in the range explored.
     \item \textbf{MLP:} final results were sensitive to optimization settings; the tuned configuration improved over logistic regression but only by a small margin.
     \item \textbf{CNN:} the embedding source was the largest practical knob; GloVe 2024 WikiGigaword 300d gave the best measured final result.
     \item \textbf{Transformer:} limited training budget and from-scratch embeddings capped performance relative to pre-trained-representation approaches.
-    \item \textbf{LLM:} \TODO[: add sensitivity note for base model, learning rate, sequence length, or fine-tuning strategy.]
+    \item \textbf{LLM:} learning rate was the most sensitive parameter; the best trial used $1.28\times10^{-5}$, a conservative value appropriate for fine-tuning a pre-trained model without catastrophic forgetting. Sequence length of 256 outperformed 128 and 192, and 2 epochs outperformed 1, suggesting the model benefited from a second full pass without overfitting.
 \end{itemize}
  
 \subsubsection{Performance vs.\ Compute Tradeoffs}
  
-Complement Naive Bayes completes in under one second and achieves 0.5372 macro-F1. Logistic Regression takes roughly 17 minutes and reaches 0.6156. The TextCNN takes 226 seconds on an RTX 5090 GPU and achieves 0.6408. The Transformer takes 1296 seconds (21.6 minutes) on a Tesla T4 and achieves only 0.5854---slower than the CNN and 5.6 points lower in macro-F1. For a practitioner constrained by compute, the lesson is clear: if pre-trained embeddings are available, a simple CNN architecture delivers near-maximum performance at a fraction of the cost of a from-scratch Transformer.
+Complement Naive Bayes completes in under one second and achieves 0.5372 macro-F1. Logistic Regression takes roughly 17 minutes and reaches 0.6156. The TextCNN takes 226 seconds on an RTX 5090 GPU and achieves 0.6408. The LSTM takes 9,894 seconds (165 minutes) on an RTX 4080 Super and achieves 0.6687. The fine-tuned LLM achieves the best result of 0.6701 but requires 17,006 seconds (283 minutes) on an RTX 5070 Ti---roughly 75 times slower than the TextCNN for a gain of only 2.9 macro-F1 points. The Transformer takes 1,296 seconds on a Tesla T4 and achieves only 0.5847, making it the worst compute-per-accuracy trade-off among the deep models. The practical takeaway is that the LSTM offers the best accuracy-per-compute balance among sequence models: it closes most of the gap to the LLM at less than 60\% of the training time, while the TextCNN remains the most efficient option overall if pre-trained sequential context is not required.
  
 \subsubsection{Error Patterns}
  
