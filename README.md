@@ -1,5 +1,6 @@
 # Term Project - CAP5610, Machine Learning
-
+## Documentation
+For the final report, please read the Docs file.
 ## Dataset
 
 ### [YelpReviewFull](https://huggingface.co/datasets/Yelp/yelp_review_full)
