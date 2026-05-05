@@ -103,8 +103,15 @@ citecolor=blue
 \section{Team Information}
 
 \subsection{Team Members and Roles}
-
+Alexander Nardi - Project Coordinator / Member\newline
+Anthony Mahon - Member\newline
+Benedetto Falin - Member\newline
+Keating Sane - Member\newline
+Mohammed Mamdouh - Member
 \subsection{Responsibility Distribution}
+
+Each team member received one traditional model and one deep learning model. The amount of work that one did was attempted to be balanced based on effort. For example, with an easier traditional model (i.e. linear SVM), you had a more complex deep learning model (i.e LSTM), and vise versa.\newline\newline
+All model's made by all members are intended for the same task, as described in Section~\ref{sec:prob-setup}.
 
 \subsection{Team Assignment Table}
 \begin{table}[H]
@@ -366,24 +373,24 @@ The unusually high optimal alpha is an interpretable finding in itself. Standard
 
 \subsubsection{Linear SVM}
 \textbf{Folder/Script:} \texttt{Linear\_SVM/Linear\_SVM.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Alexander Nardi
 
-\paragraph{Model Description:}
-
-
-\paragraph{Input Representation}
+\paragraph{Model Description:} A Linear Support Vector Machine (Linear SVM) from \texttt{sklearn.svm.LinearSVC}. This model learns a set of linear decision boundaries that maximize the margin between the review classes (1-5 stars). Linear SVM's operate directly in the original, high dimensional feature space (in this case, TF-IDF's), which make it extremely efficient for sparse, high-dimensional data. The model optimizes hinge loss with L2 regularization.
 
 
-\paragraph{Training Procedure}
+\paragraph{Input Representation:} TF--IDF vectors produced by the \texttt{sklearn.feature\_extraction.text.TfidVectorizer} with optimal maximum features found in tuning and english stop-words. The standard TF--IDF's sparse representation is well-suited for Linear SVMs, seeing as the model scales linearly, as the name implies, with the amount of non-zero features.
 
 
-\paragraph{Hyperparameters}
+\paragraph{Training Procedure:} The model is trained using a coordinate descent, implemented in sklearn. Final runs fit on the full training partition and evaluate on the test set. Validation runs for tuning use a subsampled training set with a 10\% validation split for hyperparameter tuning. Training is CPU-only and completes relatively quickly in only about 100 seconds or so.
 
 
-\paragraph{Tuning Strategy}
+\paragraph{Hyperparameters:} The primary hyperparameter is \texttt{C}, the inverse regularization strength. Smaller values of \texttt{C} enforce stronger regularization, resulting in a wider margin but resulting in potentially higher bias. Whereas larger values do the opposite, weakening regularization, and allowing the model to fit the training data more closely. The secondary hyperparameter was the maximum length \texttt{max\_features}, which is the number of features considered
 
 
-\paragraph{Implementation Notes}
+\paragraph{Tuning Strategy:} Optuna Bayesian optimization with 15 trials on the maximum 650,000-review training set, with a 10\% validation split. The full training set is allowed as training is relatively quick, and this allows us to find optimal hyperparameters for the ones listed above. \texttt{C} is selected as the best float between \{0.1, 10.0\}, whereas \texttt{max\_features} is selected between \{5000, 10,000, \& 15,000\}. The optimal hyperparameters is noted to be \texttt{C = 10619348907224617} and \texttt{max\_features = 15,000}. Maximizing the macro F1 score was used as the objective for hyperparameter tuning.
+
+
+\paragraph{Implementation Notes:} Linear SVM was actually particularly well-suited for this task due to the high dimensionality and the inherent sparsity in a TF--IDF Bag-of-Words approach. Even then, the model performed rather shockingly high on a NLP task, getting around 57\% accuracy and surpassing models which should theoretically have performed better as Linear SVM cannot process word order.
 
 
 \subsubsection{Kernel SVM}
@@ -468,29 +475,83 @@ Optuna Bayesian optimization with 20 trials via \texttt{utils.tuning.tune\_model
 \paragraph{Implementation Notes}
 Early runs without early stopping exhibited severe overfitting: training accuracy climbed above 85\% while validation accuracy plateaued near 61\%, indicating the model's capacity far exceeds what the TF-IDF representation can supply in useful signal. Batch normalization and increased dropout (0.6 in the best config) were the two changes that most reduced the train/val gap. The performance ceiling near 61\% is consistent with published results for bag-of-words MLP approaches on Yelp Full and is attributed primarily to the loss of word order at the input stage rather than insufficient model capacity.
 
-\subsubsection{Long-Short Term Memory (LSTM)}
+\subsubsection{Long Short-Term Memory (LSTM)}
 \textbf{Folder/Script:} \texttt{LSTM/LSTM.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Alexander Nardi
 
-\paragraph{Model Description}
+\paragraph{Model Description:}
+A bidirectional Long Short-Term Memory (LSTM) network implemented in PyTorch. The model processes each review as a ordered sequence of token indices rather than a TF--IDF vector via constructing an indexed vocabulary. This allows it to preserve the word order and sequential context of the review. The tokens are then mapped to a learned embedding layer and passed through the bidirectional LSTM network. The final forward and backward hidden states are concatenated and passed through a dropout layer, and finally projected onto the 5 class logits with a fully connected (FC) layer. The model is trained with Cross-Entropy (CE) loss.
 
+\paragraph{Input Representation:}
+Reviews are lowercased and then punctuation is replaced with whitespace for text cleaning. The text is then tokenized using a whitespace delimiter. A vocabulary is built from the most frequent words of the reviews, with index 0 reserved for \texttt{pad} and 1 reserved for \texttt{unk}. \texttt{Pad} is used when you need to pad a review to the \texttt{max\_len}, whereas \texttt{unk} is reserved for unknown words (i.e greatttt). The default configuration uses \texttt{max\_vocab = 50000} and \texttt{max\_len = 256}, while tuning evaluates vocabulary sizes from 10,000 to 75,000 and sequence lengths of 128, 256, 512, and 1024.
 
-\paragraph{Pretrained Backbone}
+\paragraph{Architecture:}
+\[
+\text{Token indices}
+\to \text{Embedding}(V, E)
+\to \text{BiLSTM}
+\to [h_{\text{forward}}; h_{\text{backward}}]
+\to \text{Dropout}
+\to \mathbb{R}^{5}
+\]
+The LSTM uses \texttt{batch\_first=True}. For the bidirectional model, the final hidden state from the forward direction and the final hidden state from the backward direction are concatenated before classification. No softmax is applied at the output because \texttt{nn.CrossEntropyLoss} applies log-softmax internally. Optimizer used is AdamW.
 
+\paragraph{Training Procedure:}
+The model is trained with AdamW using a fixed \texttt{weight\_decay = 1e-4}. Gradients are clipped to a maximum L2 norm of 1.0 to stabilize recurrent training. Validation runs use a 150,000-review subsample with a 10\% validation split, while final runs train on the full 650,000-review training partition and evaluate on the 50,000-review test partition. Early stopping monitors validation loss with a patience of 3 epochs, and the best validation-loss checkpoint is restored before evaluation.
 
-\paragraph{Tokenization and Input Format}
+\paragraph{Hyperparameters:}
+The tunable parameters and their Optuna search spaces are:
 
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Parameter & Type & Search Space \\
+        \midrule
+        \texttt{max\_vocab} & Categorical & \{10000, 20000, 30000, 40000, 50000, 75000\} \\
+        \texttt{max\_len} & Categorical & \{128, 256, 512\} \\
+        \texttt{embed\_dim} & Categorical & \{128, 256, 300\} \\
+        \texttt{hidden\_dim} & Categorical & \{128, 256\} \\
+        \texttt{num\_layers} & Categorical & \{1, 2\} \\
+        \texttt{bidirectional} & Categorical & \{\texttt{True}\} \\
+        \texttt{dropout} & Float & $[0.2, 0.5]$ \\
+        \texttt{lr} & Float (log) & $[10^{-4}, 10^{-3}]$ \\
+        \texttt{batch\_size} & Categorical & \{64, 128\} \\
+        \texttt{epochs} & Integer & $[3, 15]$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
-\paragraph{Training Procedure}
+\paragraph{Tuning Strategy:}
+Optuna Bayesian optimization is run for 15 trials on a 50,000-review tuning subset with a 10\% validation split. Each trial builds a vocabulary, tokenizes the train and validation sets using the \texttt{max\_vocab} and \texttt{max\_len}, trains the LSTM with early stopping with a patience of 3. Maximized Macro F1 score is the training objective. The best epoch is recorded into \texttt{best\_config.json}'s metadata so following runs can compare.
 
+\paragraph{Best Configuration:}
+The best configuration found via Optuna was:
 
-\paragraph{Hyperparameters}
+\begin{table}[H]
+    \centering
+    \begin{tabular}{ll}
+        \toprule
+        Parameter & Value \\
+        \midrule
+        \texttt{max\_vocab} & 30{,}000 \\
+        \texttt{max\_len} & 1024 \\
+        \texttt{embed\_dim} & 300 \\
+        \texttt{hidden\_dim} & 256 \\
+        \texttt{num\_layers} & 2 \\
+        \texttt{bidirectional} & True \\
+        \texttt{dropout} & 0.277 \\
+        \texttt{lr} & $5.44 \times 10^{-4}$ \\
+        \texttt{batch\_size} & 64 \\
+        \texttt{epochs} & 4 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
+This configuration achieved a validation macro-F1 of \textbf{0.5974}.
 
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
+\paragraph{Implementation Notes:}
+Training is done via GPU (its recommended to have a strong NVIDIA GPU for CUDA capabilities). Final fit was is completed in around 90 seconds on a 4080 SUPER. It should be noted that the optimization found a very computation hungry LSTM to be most optimal. In fact, it selected for all of the most computationally complex options.
 
 
 \subsubsection{Convolutional Neural Network}
