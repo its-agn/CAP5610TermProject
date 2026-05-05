@@ -24,3 +24,11 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 Desktop.ini
+
+# Tex
+*.toc
+*.out
+*.pdf
+*.gz
+*.aux
+*.log
