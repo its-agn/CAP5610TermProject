@@ -133,6 +133,7 @@ All model's made by all members are intended for the same task, as described in 
 
 \newpage
 \section{Problem Setup}
+\label{sec:prob-setup}
 
 \subsection{Classification Task}
 
@@ -835,7 +836,7 @@ This project is a five balanced class text classification problem, so a single m
 
 The repository therefore logs all four scalar metrics on every run and uses macro F1 as the tuning objective. That choice is reasonable for this dataset as again, the labels are balanced, but the classes are not equally easy where differentiating 0 and 5 star reviews is much simpler than 2 and 3 star reviews. The confusion matrix then provides the missing detail by showing which star levels are being mixed up. Together, these metrics give both a concise summary and an error breakdown that is specific enough to compare very different model families fairly.
 
-
+\newpage
 \section{Results}
 \label{sec:results}
 
@@ -871,9 +872,12 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 \texttt{min\_df}$=2$, \texttt{max\_df}$=0.9$, \texttt{max\_iter}$=300$.\\
 \textbf{Test metrics:} Accuracy $0.6168$, macro-F1 $0.6156$.
 
-\confmatfig{confusion_matrix_logreg.png}
-{Confusion matrix: Logistic Regression}
-{Confusion matrix for the Logistic Regression final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Logistic_Regression/confusion_matrix_logreg.png}
+    \caption[Confusion matrix: Logistic Regression]{Confusion matrix for the Logistic Regression final run.}
+    \label{fig:confmat_logreg}
+\end{figure}
 
 \textbf{Observations.} Logistic regression is the strongest measured traditional baseline. Its confusion matrix has a noticeably stronger diagonal than the SVM, NB, and tree-based models, with especially good separation for 1-star and 5-star reviews. The remaining errors are mostly adjacent-class mistakes: 3-star reviews split toward 2 and 4 stars, while 4-star and 5-star reviews are often confused with each  other. This shows that the linear softmax model captures the ordered sentiment structure even though it is trained as a nominal five-class classifier.
 
@@ -881,9 +885,12 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 \textbf{Final hyperparameters:} $\alpha=45$, TF--IDF \texttt{max\_features}$=20000$, $n$-gram range $(1,2)$.\\
 \textbf{Test metrics:} Accuracy $0.5525$, macro-F1 $0.5372$.
 
-\confmatfig{nb_confusion_matrix.png}
-{Confusion matrix: Complement NB}
-{Confusion matrix for the Complement Naive Bayes final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Naive_Bayes/nb_confusion_matrix.png}
+    \caption[Confusion matrix: Complement NB]{Confusion matrix for the Complement Naive Bayes final run.}
+    \label{fig:confmat_nb}
+\end{figure}
 
 \textbf{Observations.} Complement NB is fast and competitive, but its confusion matrix shows a strong bias toward extreme sentiment words. It performs well on clear 1-star and 5-star reviews, but 2-star reviews are often predicted as 1 star, and 4-star reviews are often predicted as 5 stars. This pattern fits the model assumptions: isolated sentiment-heavy terms are useful, but the conditional-independence model struggles with mixed sentiment, negation, and reviews whose rating depends on multiple aspects.
 
@@ -891,9 +898,13 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 \textbf{Final hyperparameters:} \texttt{max\_depth}$=300$, \texttt{min\_samples\_leaf}$=10$.\\
 \textbf{Test metrics:} Accuracy $0.4082$, macro-F1 $0.4077$.
 
-\confmatfig{confusion_matrix_dt.png}
-{Confusion matrix: Decision Tree baseline}
-{Confusion matrix for the Decision Tree baseline final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Decision_Tree/confusion_matrix_dt.png}
+    \caption[Confusion matrix: Decision Tree baseline]
+    {Confusion matrix for the Decision Tree baseline final run.}
+    \label{fig:confmat_dt}
+\end{figure}
 
 \textbf{Observations.} The Decision Tree baseline confirms that a single tree is a poor fit for sparse TF--IDF sentiment classification. Its diagonal is much weaker than the stronger models, and errors spread broadly across neighboring classes. The model especially struggles with the middle ratings, where one path through a single tree cannot combine many weak lexical cues smoothly. This result motivates Random Forest: bagging many trees should reduce variance and produce more stable class decisions.
 
@@ -902,9 +913,12 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 \texttt{max\_features}$=$\,sqrt.\\
 \textbf{Test metrics:} Accuracy $0.5555$, macro-F1 $0.5468$.
 
-\confmatfig{confusion_matrix_rf.png}
-{Confusion matrix: Random Forest}
-{Confusion matrix for the Random Forest final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Random_Forest/confusion_matrix_rf.png}
+    \caption[Confusion matrix: Random Forest]{Confusion matrix for the Random Forest final run.}
+    \label{fig:confmat_rf}
+\end{figure}
 
 \textbf{Observations.} As the main tree-based traditional model, Random Forest substantially improves over the Decision Tree baseline. Its confusion matrix has a clearer diagonal, especially for 1-star and 5-star reviews, showing that bagging and feature subsampling recover more stable structure from the sparse feature space. However, the model still confuses neighboring ratings heavily, especially 2-star with 1-star or 3-star and 4-star with 5-star. This suggests that tree ensembles help, but sparse review sentiment remains better modeled by additive lexical evidence than by hard threshold splits.
 
@@ -912,9 +926,12 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 \textbf{Final hyperparameters:} $C=0.1062$, \texttt{max\_features}$=15000$.\\
 \textbf{Test metrics:} Accuracy $0.5737$, macro-F1 $0.5656$.
 
-\confmatfig{confusion_matrix_linear_svm.png}
-{Confusion matrix: Linear SVM}
-{Confusion matrix for the Linear SVM final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Linear_SVM/confusion_matrix_linear_svm.png}
+    \caption[Confusion matrix: Linear SVM]{Confusion matrix for the Linear SVM final run.}
+    \label{fig:confmat_linear_svm}
+\end{figure}
 
 \textbf{Observations.} The Linear SVM is a strong sparse-feature baseline, but it trails logistic regression. The confusion matrix shows the expected ordinal pattern: 1-star and 5-star reviews are classified most reliably, while the middle ratings are more ambiguous. The largest errors are adjacent-class mistakes, especially 2-star reviews predicted as 1 or 3 stars and 4-star reviews predicted as 5 stars. This indicates that the model learns broad sentiment direction but struggles to draw fine-grained boundaries between neighboring ratings.
 
@@ -922,9 +939,12 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 \textbf{Final hyperparameters:} RBF kernel, $C=1$, \texttt{max\_features }$=10000$.\\
 \textbf{Test metrics:} Accuracy $0.5196$, macro-F1 $0.5186$.
 
-\confmatfig{confusion_matrix_svm.png}
-{Confusion matrix: Kernel SVM}
-{Confusion matrix for the Kernel SVM final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Kernel_SVM/confusion_matrix_svm.png}
+    \caption[Confusion matrix: Kernel SVM]{Confusion matrix for the Kernel SVM final run.}
+    \label{fig:confmat_svm}
+\end{figure}
 
 \textbf{Observations.} The Kernel SVM underperforms the full-scale linear models because exact RBF-kernel training required subsampling. Its confusion matrix has a weaker diagonal than the stronger sparse-feature models, especially for the middle classes. The model still mostly makes adjacent-rating errors, but its class boundaries are less stable: 2-star reviews are often pushed toward 1 or 3 stars, and 4-star reviews are frequently confused with 5 stars. This supports treating the RBF SVM as a comparison point rather than the main high-performing sparse baseline.
 
@@ -933,9 +953,12 @@ The repository therefore logs all four scalar metrics on every run and uses macr
 learning rate $1.32\times10^{-4}$, weight decay $1.83\times10^{-5}$.\\
 \textbf{Test metrics:} Accuracy $0.6236$, macro-F1 $0.6196$.
 
-\confmatfig{mlp_confusion_matrix.png}
-{Confusion matrix: MLP}
-{Confusion matrix for the MLP final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../MultiLayer_Perceptron/mlp_confusion_matrix.png}
+    \caption[Confusion matrix: MLP]{Confusion matrix for the MLP final run.}
+    \label{fig:confmat_mlp}
+\end{figure}
 
 \textbf{Observations.} The tuned MLP slightly beats logistic regression in accuracy and macro-F1, and its confusion matrix is broadly similar to the logistic regression matrix. It improves the diagonal for some classes, especially the extreme ratings, but the same adjacent-class ambiguity remains. The model still confuses 2-star reviews with 1-star or 3-star reviews and 4-star reviews with 5-star reviews. This suggests that nonlinear layers over TF--IDF add some capacity, but the sparse lexical representation itself still carries most of the signal.
 
@@ -943,9 +966,12 @@ learning rate $1.32\times10^{-4}$, weight decay $1.83\times10^{-5}$.\\
 \textbf{Final hyperparameters:} \TODO[: fill final LSTM hyperparameters.]\\
 \textbf{Test metrics:} Accuracy 0.6679, macro-F1 0.6687
 
-\confmatfig{lstm_confusion_matrix.png}
-{Confusion matrix: LSTM}
-{Confusion matrix for the LSTM final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../LSTM/confusion_matrix_lstm.png}
+    \caption[Confusion matrix: LSTM]{Confusion matrix for the LSTM final run.}
+    \label{fig:confmat_lstm}
+\end{figure}
 
 \textbf{Observations.} \TODO[: Analyze the LSTM confusion matrix. Discuss whether sequential state helps with middle-class reviews, whether errors are mostly adjacent, and how the LSTM compares against CNN, Transformer, and TF--IDF baselines.]
 
@@ -954,9 +980,12 @@ learning rate $1.32\times10^{-4}$, weight decay $1.83\times10^{-5}$.\\
 dropout $0.3454$, learning rate $3.41\times10^{-4}$, batch size 128, 3 epochs.\\
 \textbf{Test metrics:} Accuracy $0.6422$, macro-F1 $0.6408$.
 
-\confmatfig{confusion_matrix_cnn.png}
-{Confusion matrix: TextCNN}
-{Confusion matrix for the TextCNN final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../CNN/confusion_matrix_cnn.png}
+    \caption[Confusion matrix: TextCNN]{Confusion matrix for the TextCNN final run.}
+    \label{fig:confmat_cnn}
+\end{figure}
 
 \textbf{Observations.} The TextCNN is the strongest measured model. Its confusion matrix has the clearest overall diagonal among the  measured models, with strong performance on 2-star, 3-star, and 5-star reviews compared with the traditional baselines. The dominant errors are still adjacent-rating confusions, especially 4-star reviews predicted as 3 or 5 stars and 5-star reviews predicted as 4 stars. This supports the conclusion that pre-trained word embeddings plus local convolutional features are effective for fine-grained Yelp sentiment, while the inherent ambiguity between neighboring ratings remains.
 
@@ -965,9 +994,13 @@ dropout $0.3454$, learning rate $3.41\times10^{-4}$, batch size 128, 3 epochs.\\
 learning rate $6.50\times10^{-4}$, weight decay $3.14\times10^{-5}$, max length 160, vocabulary cap 15K, batch size 64, 3 epochs.\\
 \textbf{Test metrics:} Accuracy $0.5854$, macro-F1 $0.5847$.
 
-\confmatfig{confusion_matrix_transformer.png}
-{Confusion matrix: Transformer Encoder}
-{Confusion matrix for the Transformer Encoder final run.}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Transformers/confusion_matrix_transformer.png}
+    \caption[Confusion matrix: Transformer Encoder]
+    {Confusion matrix for the Transformer Encoder final run.}
+    \label{fig:confmat_transformer}
+\end{figure}
 
 \textbf{Observations.} The from-scratch Transformer beats several traditional baselines but is beaten by logistic regression, MLP, and TextCNN. Its confusion matrix shows a strong diagonal for 2-star, 4-star, and 5-star reviews, but weaker separation for 3-star reviews, which are often predicted as 2 or 4 stars. The model captures broad sentiment direction, but without external pre-training it does not separate fine-grained rating boundaries as well as the CNN with GloVe embeddings.
 
@@ -975,8 +1008,13 @@ learning rate $6.50\times10^{-4}$, weight decay $3.14\times10^{-5}$, max length 
 \textbf{Final hyperparameters:} \TODO[: fill final LLM hyperparameters.]\\
 \textbf{Test metrics:} Accuracy 0.6711, macro-F1 0.6701.
 
-\confmatfig{llm_confusion_matrix.png}
-{Confusion matrix: Fine-Tuned LLM}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{../Large_Language_Model/confusion_matrix_llm.png}
+    \caption[Confusion matrix: Fine-Tuned LLM]
+    {Confusion matrix for the fine-tuned LLM final run.}
+    \label{fig:confmat_llm}
+\end{figure}
 {Confusion matrix for the fine-tuned LLM final run.}
 
 \textbf{Observations.} \TODO[: Analyze the LLM confusion matrix. Discuss whether pre-trained contextual representations reduce middle-class confusion, whether adjacent-class errors still dominate, and how the LLM compares against TextCNN and Transformer.]
