@@ -1005,7 +1005,7 @@ Across all models, the dominant error pattern is adjacent-class confusion. Revie
 \section{Conclusions \& Future Work}
 
 \subsection{Key Findings}
-Across models, performance metrics (accuracy, precision, recall, and macro F1) tended to nearly match eachother for each individual model. This indicates that an improvement in any one metric was followed by a similar improvement in all others. This consistenty suggests that the models were approaching a performance barrier on the dataset itself rather than a model architecture compatibility.
+Across models, performance metrics (accuracy, precision, recall, and macro F1) tended to nearly match each other for each individual model. This indicates that an improvement in any one metric was followed by a similar improvement in all others. This consistent suggests that the models were approaching a performance barrier on the dataset itself rather than a model architecture compatibility.
 
 The most important finding was the seemingly inherent ambiguity present in these yelp reviews. Even models specifically designed for Natural Language Processing (NLP), such as LSTM's, LLM's, and Transformers, were unable to breach the 70\% barrier. All this despite the dataset being large (700,000 text corpus), and well balanced (exactly 20\% per review category).
 
@@ -1013,7 +1013,7 @@ What this means is that reviews at 1 and 5 stars ("extreme experiences") were si
 
 A key reason for this is that moderate experiences are influenced by subjective user preferences that are not able to be expressed through a single body of text. For example, two users describing a similar level of customer service may assign different ratings (e.g 2 star vs. 3 star) depending on how they personally value service as compared to other factors (e.g quality of food).
 
-Overall, the results suggest that the primary limitation in review categorization is not the models itself, but the inherent subjectvitiy of user experiences which result in an inescapable label noise present within the database.
+Overall, the results suggest that the primary limitation in review categorization is not the models itself, but the inherent subjectivity of user experiences which result in an inescapable label noise present within the database.
 
 \subsection{Limitations}
 Several limitations affected the performance of the models.
