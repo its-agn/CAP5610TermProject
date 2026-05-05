@@ -303,7 +303,27 @@ Validation runs load a 150,000 review subset and hold out 10\% for validation wh
 
 
 \paragraph{Hyperparameters:}
-The main model hyperparameters are \texttt{C}, penalty type (\texttt{l2} or \texttt{elasticnet}), optional \texttt{l1\_ratio} for elastic net mixing, and \texttt{max\_iter}. TF--IDF preprocessing is tuned with the classifier through \texttt{tfidf\_features}, \texttt{ngram\_max}, \texttt{min\_df}, and \texttt{max\_df}. The convergence tolerance remains fixed at \texttt{1e-4}.
+The tunable parameters and their Optuna search spaces are:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Parameter & Type & Search Space \\
+        \midrule
+        \texttt{tfidf\_features} & Categorical & \{20000, 40000, 60000\} \\
+        \texttt{ngram\_max} & Integer & \{1, 2\} \\
+        \texttt{min\_df} & Categorical & \{1, 2, 5\} \\
+        \texttt{max\_df} & Categorical & \{0.9, 0.95, 1.0\} \\
+        \texttt{C} & Float (log) & $[0.25, 8.0]$ \\
+        \texttt{penalty} & Categorical & \{\texttt{l2}, \texttt{elasticnet}\} \\
+        \texttt{max\_iter} & Categorical & \{200, 300, 500\} \\
+        \texttt{l1\_ratio} & Float & $[0.05, 0.95]$ when \texttt{elasticnet} is used \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The convergence tolerance remains fixed at \texttt{1e-4}.
 
 
 \paragraph{Tuning Strategy:}
@@ -654,7 +674,27 @@ Non final runs use a 20,000 review subset with a 10\% validation split. Final ru
 
 
 \paragraph{Hyperparameters:}
-The tunable training parameters are \texttt{max\_length}, \texttt{epochs}, \texttt{batch\_size}, \texttt{eval\_batch\_size}, \texttt{learning\_rate}, \texttt{weight\_decay}, \texttt{warmup\_ratio}, and \texttt{grad\_accum\_steps}. Patience is fixed at 2 in regular runs and reduced to 1 during tuning so poor trials end quickly.
+The tunable parameters and their Optuna search spaces are:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Parameter & Type & Search Space \\
+        \midrule
+        \texttt{max\_length} & Categorical & \{128, 192, 256\} \\
+        \texttt{epochs} & Categorical & \{1, 2\} \\
+        \texttt{batch\_size} & Categorical & \{2, 4\} \\
+        \texttt{eval\_batch\_size} & Categorical & \{4, 8\} \\
+        \texttt{learning\_rate} & Float (log) & $[10^{-5}, 8 \times 10^{-5}]$ \\
+        \texttt{weight\_decay} & Float (log) & $[10^{-4}, 5 \times 10^{-2}]$ \\
+        \texttt{warmup\_ratio} & Float & $[0, 0.12]$ \\
+        \texttt{grad\_accum\_steps} & Categorical & \{1, 2, 4\} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Patience is fixed at 2 in regular runs and reduced to 1 during tuning so poor trials end quickly.
 
 
 \paragraph{Tuning Strategy:}
