@@ -261,30 +261,36 @@ A single global seed (\texttt{DEFAULT\_SEED = 0}) is set at the start of every r
 
 \subsubsection{Hyperparameter Tuning Workflow}
 
-Tuning is invoked with the \texttt{--tune} flag and uses Optuna Bayesian optimization through \texttt{utils.tuning.tune\_model()}. Each model defines an \texttt{objective()} that samples a configuration, builds features, trains on a subset of the training data ranging from roughly 6,000 reviews (LLM) to 650,000 reviews (CNN, Linear SVM) depending on the model's compute cost per trial, and returns macro-F1 on the validation split. Trial budgets range from 6 (Logistic Regression) to 30 (CNN), with most models in the 15--20 range. When tuning completes, \texttt{save\_best\_config()} writes the winning configuration plus metadata (seed, embedding source, train size, validation split, trial count, best macro-F1) to \texttt{best\_config.json}, and the tuning helper appends a Markdown summary of all trials to \texttt{tuning\_log.md}. Following runs load that JSON automatically unless \texttt{--default} is passed. Naive Bayes is the exception: \texttt{--tune} runs a manual alpha sweep over a fixed grid rather than an Optuna study, and writes \texttt{nb\_alpha\_sweep.png} instead of a tuning log.
+Tuning is invoked with the \texttt{--tune} flag and uses Optuna Bayesian optimization through \texttt{utils.tuning.tune\_model()}. Each model defines an \texttt{objective()} that samples a configuration, builds features, trains on a subset of the training data ranging from roughly 6,000 reviews (LLM) to 650,000 reviews (CNN, Linear SVM) depending on the model's compute cost per trial, and returns macro F1 on the validation split. Trial budgets range from 6 (Logistic Regression) to 30 (CNN), with most models in the 15--20 range. When tuning completes, \texttt{save\_best\_config()} writes the winning configuration plus metadata (seed, embedding source, train size, validation split, trial count, best macro F1) to \texttt{best\_config.json}, and the tuning helper appends a Markdown summary of all trials to \texttt{tuning\_log.md}. Following runs load that JSON automatically unless \texttt{--default} is passed. Naive Bayes is the exception: \texttt{--tune} runs a manual alpha sweep over a fixed grid rather than an Optuna study, and writes \texttt{nb\_alpha\_sweep.png} instead of a tuning log.
 
 \subsection{Traditional Machine Learning Models}
 
 \subsubsection{Logistic Regression}
 \textbf{Folder/Script:} \texttt{Logistic\_Regression/Logistic\_Regression.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Mohammed Mamdouh
 
-\paragraph{Model Description}
-
-
-\paragraph{Input Representation}
+\paragraph{Model Description:}\mbox{}\\
+A multinomial logistic regression classifier from \texttt{sklearn.linear\_model.LogisticRegression}. The model learns one linear score per class over the TF--IDF feature vector and applies a SoftMax based cross entropy objective for review rating prediction. Unlike Naive Bayes, it does not assume feature independence, but it is still a linear bag of words model and therefore only captures limited local order through the chosen $n$-gram features.
 
 
-\paragraph{Training Procedure}
+\paragraph{Input Representation:}
+Sparse TF--IDF features built directly in the script with \texttt{TfidfVectorizer}. The vectorizer uses \texttt{sublinear\_tf=True}, \texttt{strip\_accents="unicode"}, and \texttt{dtype=np.float32}. The tuned configuration keeps 40,000 features, includes unigrams and bigrams, and sets \texttt{min\_df = 2}, \texttt{max\_df = 0.9}.
 
 
-\paragraph{Hyperparameters}
+\paragraph{Training Procedure:}
+Validation runs load a 150,000 review subset and hold out 10\% for validation where final runs fit on the full 650,000-review training split and evaluate on the 50,000 review test split. Optimization is handled by scikit-learn rather than a manual training loop. The script uses \texttt{lbfgs} for \texttt{l2} regularization and switches to \texttt{saga} when \texttt{elasticnet} is selected.
 
 
-\paragraph{Tuning Strategy}
+\paragraph{Hyperparameters:}
+The main model hyperparameters are \texttt{C}, penalty type (\texttt{l2} or \texttt{elasticnet}), optional \texttt{l1\_ratio} for elastic net mixing, and \texttt{max\_iter}. TF--IDF preprocessing is tuned with the classifier through \texttt{tfidf\_features}, \texttt{ngram\_max}, \texttt{min\_df}, and \texttt{max\_df}. The convergence tolerance remains fixed at \texttt{1e-4}.
 
 
-\paragraph{Implementation Notes}
+\paragraph{Tuning Strategy:}
+Optuna Bayesian optimization with 6 trials on a 100,000 review training subset and a 10\% validation split. Search space: \texttt{tfidf\_features} $\in \{20000, 40000, 60000\}$, \texttt{ngram\_max} $\in \{1, 2\}$, \texttt{min\_df} $\in \{1, 2, 5\}$, \texttt{max\_df} $\in \{0.9, 0.95, 1.0\}$, \texttt{C} $\in [0.25, 8.0]$ on a log scale, \texttt{penalty} $\in \{\texttt{l2}, \texttt{elasticnet}\}$, \texttt{max\_iter} $\in \{200, 300, 500\}$, and \texttt{l1\_ratio} $\in [0.05, 0.95]$ when elastic net is active. The saved best configuration uses \texttt{l2} regularization with $C \approx 0.379$ and achieved validation macro F1 of 0.6002 during tuning.
+
+
+\paragraph{Implementation Notes:}
+The full pipeline stays lightweight: TF--IDF fitting, model training, evaluation, and artifact saving all happen in one script while reusing the shared repo utilities for dataset loading, metrics, and logging. Because the representation remains sparse end-to-end and training is CPU-only, Logistic Regression serves as one of the fastest strong baselines in the project. Its final macro precision, macro recall, and macro F1 are all tightly clustered near 0.615, which suggests the model is already making fairly balanced decisions across classes and that most of the remaining limitations comes from the linear TF--IDF representation from being a non deep learning model rather than an easily fixable training issue.
 
 
 \subsubsection{Naive Bayes}
@@ -326,9 +332,9 @@ The unusually high optimal alpha is an interpretable finding in itself. Standard
 
 \textbf{Hyperparameters:} The tunable parameters are \texttt{max\_depth} (maximum tree depth, which caps model capacity and the rate at which the tree can carve up the feature space), \texttt{min\_samples\_leaf} (minimum training rows per leaf, which prevents the tree from creating tiny leaves that memorize individual reviews), and the four TF--IDF parameters listed above. The splitting criterion is sklearn's default Gini impurity.
 
-\textbf{Tuning Strategy:} Optuna Bayesian optimization with 20 trials on a 200,000-review tuning subset (10\% validation split). Search space: \texttt{tfidf\_features} $\in$ \{5k, 10k, 20k, 40k\}, \texttt{ngram\_max} $\in$ \{1, 2\}, \texttt{min\_df} $\in$ \{3, 5, 10\}, \texttt{max\_df} $\in$ \{0.85, 0.9, 0.95\}, \texttt{max\_depth} $\in$ \{50, 100, 150, 300, None\}, \texttt{min\_samples\_leaf} $\in [1, 10]$. Macro-F1 on the validation split was the objective.
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 20 trials on a 200,000-review tuning subset (10\% validation split). Search space: \texttt{tfidf\_features} $\in$ \{5k, 10k, 20k, 40k\}, \texttt{ngram\_max} $\in$ \{1, 2\}, \texttt{min\_df} $\in$ \{3, 5, 10\}, \texttt{max\_df} $\in$ \{0.85, 0.9, 0.95\}, \texttt{max\_depth} $\in$ \{50, 100, 150, 300, None\}, \texttt{min\_samples\_leaf} $\in [1, 10]$. macro F1 on the validation split was the objective.
 
-\textbf{Implementation Notes:} Tree fitting on the 200k tuning subset takes well under a minute per trial on CPU, but the full 650k-review final fit grows to roughly an hour as the tree depth scales. With the best tuned settings, the model memorizes most of the training set: train accuracy is far above the macro-F1 it achieves on validation/test. The model was kept as an interpretable baseline to compare with the ensemble.
+\textbf{Implementation Notes:} Tree fitting on the 200k tuning subset takes well under a minute per trial on CPU, but the full 650k-review final fit grows to roughly an hour as the tree depth scales. With the best tuned settings, the model memorizes most of the training set: train accuracy is far above the macro F1 it achieves on validation/test. The model was kept as an interpretable baseline to compare with the ensemble.
 
 \subsubsection{Random Forest}
 \textbf{Folder/Script:} \texttt{Random\_Forest/Random\_Forest.py}\\
@@ -342,7 +348,7 @@ The unusually high optimal alpha is an interpretable finding in itself. Standard
 
 \textbf{Hyperparameters:} The tunable parameters are mirrored from the Decision Tree, with two additions: \texttt{n\_estimators} (number of trees in the forest) and \texttt{max\_features} (number of features randomly considered at each split).
 
-\textbf{Tuning Strategy:} Optuna Bayesian optimization with 20 trials on a 200,000-review tuning subset (10\% validation split). Search space mirrors the Decision Tree's parameters and adds \texttt{n\_estimators} $\in$ \{100, 200, 300, 500\} and \texttt{max\_features} $\in$ \{"sqrt", "log2"\}. Macro-F1 on the validation split was the objective.              
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 20 trials on a 200,000-review tuning subset (10\% validation split). Search space mirrors the Decision Tree's parameters and adds \texttt{n\_estimators} $\in$ \{100, 200, 300, 500\} and \texttt{max\_features} $\in$ \{"sqrt", "log2"\}. macro F1 on the validation split was the objective.              
 
 \textbf{Implementation Notes:} A 500-tree forest on the 200k tuning subset fits in roughly three minutes per trial with \texttt{n\_jobs = -1}; the full 650k-review final fit grows to about 44 minutes. Bootstrap sampling plus the \texttt{max\_features = "sqrt"} per-split feature subset force each tree to see a different slice of the data and consider a different subset of words at every split, so the trees make different mistakes and the variance that the single Decision Tree exhibits averages out.
 
@@ -350,7 +356,7 @@ The unusually high optimal alpha is an interpretable finding in itself. Standard
 \textbf{Folder/Script:} \texttt{Linear\_SVM/Linear\_SVM.py}\\
 \textbf{Team Member:}
 
-\paragraph{Model Description}
+\paragraph{Model Description:}
 
 
 \paragraph{Input Representation}
@@ -450,7 +456,7 @@ Early runs without early stopping exhibited severe overfitting: training accurac
 
 \textbf{Hyperparameters:} The tunable parameters are \texttt{num\_filters} (number of feature maps per kernel width), \texttt{filter\_sizes} (the set of kernel widths run in parallel, wider filters capture longer $n$-grams), \texttt{dropout} (regularization on the concatenated feature vector before the fully connected layer), \texttt{lr} (Adam learning rate), \texttt{batch\_size}, and \texttt{epochs} (effective via early stopping). The embedding source is selected at the CLI rather than tuned; the choice is recorded in \texttt{best\_config.json}'s metadata so following runs can detect a mismatch.
 
-\textbf{Tuning Strategy:} Optuna Bayesian optimization with 30 trials on the full 650,000-review training partition (10\% validation split). Search space: \texttt{num\_filters} $\in$ \{100, 200, 300\}, \texttt{filter\_sizes} $\in$ \{"3,4,5", "2,3,4,5"\}, \texttt{dropout} $\in [0.2, 0.6]$, \texttt{lr} $\in [10^{-4}, 10^{-2}]$ (log scale), \texttt{batch\_size} $\in$ \{64, 128\}, \texttt{epochs} $\in [5, 15]$. Macro-F1 on the validation split was the objective. The best epoch identified by early stopping is written back into \texttt{best\_config.json} so final runs reproduce that training duration.
+\textbf{Tuning Strategy:} Optuna Bayesian optimization with 30 trials on the full 650,000-review training partition (10\% validation split). Search space: \texttt{num\_filters} $\in$ \{100, 200, 300\}, \texttt{filter\_sizes} $\in$ \{"3,4,5", "2,3,4,5"\}, \texttt{dropout} $\in [0.2, 0.6]$, \texttt{lr} $\in [10^{-4}, 10^{-2}]$ (log scale), \texttt{batch\_size} $\in$ \{64, 128\}, \texttt{epochs} $\in [5, 15]$. macro F1 on the validation split was the objective. The best epoch identified by early stopping is written back into \texttt{best\_config.json} so final runs reproduce that training duration.
 
 \textbf{Implementation Notes:} Training is GPU-bound; on an RTX 5090 a final fit on 650k reviews completes in under a minute per epoch. Because the embedding source materially affects training, the saved choice is recorded in \texttt{best\_config.json}'s metadata so following runs use the same embeddings the config was tuned with.
 
@@ -481,27 +487,34 @@ Early runs without early stopping exhibited severe overfitting: training accurac
 
 \subsubsection{Large Language Model (Decoder Only)}
 \textbf{Folder/Script:} \texttt{Large\_Language\_Model/Large\_Language\_Model.py}\\
-\textbf{Team Member:}
+\textbf{Team Member:} Mohammed Mamdouh
 
 \paragraph{Model Description}
+A decoder only transformer finetuned for 5 class review classification through HuggingFace's \texttt{AutoModelForSequenceClassification}. Although the backbone model is a standard language model, this implementation uses it as a classifier by attaching a sequence level classification head and optimizing cross entropy loss on our dataset.
 
 
-\paragraph{Pretrained Backbone}
+\paragraph{Pretrained Backbone:}
+Our base model is \texttt{distilgpt2}. At load time, the script rewrites the configuration for \texttt{num\_labels = 5} and populates label name mappings so predictions align with the repository's shared evaluation utilities. If the tokenizer does not define a padding token, the end of sequence token is reused for padding.
 
 
-\paragraph{Tokenization and Input Format}
+\paragraph{Tokenization and Input Format:}
+Raw review text is passed directly to the pretrained HuggingFace tokenizer, which performs subword BPE tokenization. Inputs are truncated to a tunable \texttt{max\_length} (128, 192, or 256 during tuning) and stored as \texttt{input\_ids} plus \texttt{attention\_mask}. Padding is applied dynamically per batch through \texttt{DataCollatorWithPadding}, which keeps memory use lower than padding the full dataset to a fixed length in advance.
 
 
-\paragraph{Training Procedure}
+\paragraph{Training Procedure:}
+Non final runs use a 20,000 review subset with a 10\% validation split. Final runs load the full 650,000-review training split, reserve 5\% of it as an internal validation set for early stopping, then evaluate the best checkpoint on the 50,000-review test split. Optimization uses AdamW with a linear warmup schedule, gradient clipping at 1.0, mixed precision on CUDA, and early stopping off of the validation macro F1. After training, the best validation checkpoint is restored before the final evaluation pass.
 
 
-\paragraph{Hyperparameters}
+\paragraph{Hyperparameters:}
+The tunable training parameters are \texttt{max\_length}, \texttt{epochs}, \texttt{batch\_size}, \texttt{eval\_batch\_size}, \texttt{learning\_rate}, \texttt{weight\_decay}, \texttt{warmup\_ratio}, and \texttt{grad\_accum\_steps}. Patience is fixed at 2 in regular runs and reduced to 1 during tuning so poor trials end quickly.
 
 
-\paragraph{Tuning Strategy}
+\paragraph{Tuning Strategy:}
+Optuna optimization with 8 trials on a 6,000 review subset and a 10\% validation split. The backbone itself is fixed during each study where  tuning only searches the finetuning configuration. Search space: \texttt{max\_length} $\in \{128, 192, 256\}$, \texttt{epochs} $\in \{1, 2\}$, \texttt{batch\_size} $\in \{2, 4\}$, \texttt{eval\_batch\_size} $\in \{4, 8\}$, \texttt{learning\_rate} $\in [10^{-5}, 8 \times 10^{-5}]$, \texttt{weight\_decay} $\in [10^{-4}, 5 \times 10^{-2}]$, \texttt{warmup\_ratio} $\in [0, 0.12]$, and \texttt{grad\_accum\_steps} $\in \{1, 2, 4\}$. The saved best configuration for \texttt{distilgpt2} uses \texttt{max\_length = 256}, \texttt{epochs = 2}, \texttt{batch\_size = 2}, \texttt{eval\_batch\_size = 8}, learning rate $\approx 1.28 \times 10^{-5}$, weight decay $\approx 0.0053$, and warmup ratio $\approx 0.0172$, reaching macro F1 of 0.5926 during tuning.
 
 
-\paragraph{Implementation Notes}
+\paragraph{Implementation Notes:}
+The implementation pretokenizes the dataset into a small custom \texttt{Dataset} object and uses \texttt{DataCollatorWithPadding} so each batch is padded only to its local maximum sequence length. On CUDA, training uses automatic mixed precision through \texttt{torch.autocast} and \texttt{GradScaler} to reduce memory pressure. The best model state is tracked in memory using validation macro F1, restored after training, and also written to \texttt{Large\_Language\_Model/saved\_model} so the exact fine-tuned checkpoint can be reused later.
 
 
 \subsection{Cross-Model Engineering Choices}
@@ -512,7 +525,7 @@ Every model script imports \texttt{common\_parser()} from \texttt{utils.args}, w
 
 \subsubsection{Logging and Artifact Saving}
 
-Run output is structured by helpers in \texttt{utils.evaluation}: \texttt{print\_run\_header()} prints the model name and contextual info; \texttt{print\_value\_section()} prints the parameter table; \texttt{timed\_step()} prints elapsed time for each step during loading/training. After evaluation, \texttt{save\_results()} appends a Markdown section to \texttt{results\_log.md} with accuracy, macro-precision, macro-recall, macro-F1, runtime, parameters, and metadata; the same helper guards against overwriting a better run by comparing macro-F1 against the existing entry. For final runs, \texttt{plot\_confusion\_matrix()} writes a PNG figure into the model folder. \texttt{--discard} bypasses all writes.
+Run output is structured by helpers in \texttt{utils.evaluation}: \texttt{print\_run\_header()} prints the model name and contextual info; \texttt{print\_value\_section()} prints the parameter table; \texttt{timed\_step()} prints elapsed time for each step during loading/training. After evaluation, \texttt{save\_results()} appends a Markdown section to \texttt{results\_log.md} with accuracy, macro precision, macro recall, macro F1, runtime, parameters, and metadata; the same helper guards against overwriting a better run by comparing macro F1 against the existing entry. For final runs, \texttt{plot\_confusion\_matrix()} writes a PNG figure into the model folder. \texttt{--discard} bypasses all writes.
 
 \subsubsection{Hardware/Runtime Considerations}
 
@@ -614,8 +627,8 @@ python CNN/CNN.py --discard --default
     Type                     & Location & Purpose \\
     \midrule
     Best configuration       & \texttt{<Model>/best\_config.json} & Hyperparameters and metadata from the most recent tuning run. \\
-    Tuning logs              & \texttt{<Model>/tuning\_log.md} & Markdown record of every Optuna trial, noting parameters, val macro-F1, and the runtime. Naive Bayes is the exception: it runs a manual alpha sweep producing \texttt{nb\_alpha\_sweep.png} instead. \\
-    Results logs             & \texttt{<Model>/results\_log.md} & Markdown record of every best validation and final run: accuracy, macro-precision/recall/F1, parameters, metadata, runtime. \\
+    Tuning logs              & \texttt{<Model>/tuning\_log.md} & Markdown record of every Optuna trial, noting parameters, val macro F1, and the runtime. Naive Bayes is the exception: it runs a manual alpha sweep producing \texttt{nb\_alpha\_sweep.png} instead. \\
+    Results logs             & \texttt{<Model>/results\_log.md} & Markdown record of every best validation and final run: accuracy, macro precision/recall/F1, parameters, metadata, runtime. \\
     Confusion matrix  & \texttt{<Model>/confusion\_matrix\_*.png} & PNG figure written on final runs. \\
     \bottomrule
 \end{longtable}
