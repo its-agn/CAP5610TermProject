@@ -21,6 +21,18 @@
 \usepackage{longtable}
 \usepackage{verbatim}
 \usetikzlibrary{positioning, calc}
+% Confusion matrix figure command
+\newcommand{\confmatfig}[3]{
+  \begin{center}
+  \IfFileExists{#1}{
+      \includegraphics[width=0.48\textwidth]{#1}
+  }{
+      \fbox{\parbox{0.48\textwidth}{\centering \vspace{4em}#2\vspace{4em}}}
+  }
+
+  {\small \textbf{Figure:} #3}
+  \end{center}
+  }
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 
@@ -97,7 +109,7 @@ citecolor=blue
 \subsection{Team Assignment Table}
 \begin{table}[H]
     \centering
-    \begin{tabularx}{\textwidth}{p{0.36\textwidth} Y}
+    \begin{tabularx}{\textwidth}{p{0.4\textwidth} Y}
         \toprule
         \textbf{Team Member}                  & \textbf{Models}                     \\
         \midrule
@@ -370,24 +382,39 @@ The unusually high optimal alpha is an interpretable finding in itself. Standard
 
 \subsubsection{Kernel SVM}
 \textbf{Folder/Script:} \texttt{Kernel\_SVM/Kernel\_SVM.py}\\
-\textbf{Team Member:}
-
-\paragraph{Model Description}
-
-
-\paragraph{Input Representation}
-
-
-\paragraph{Training Procedure}
-
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
+\textbf{Team Member:} Anthony Mahon
+ 
+\paragraph{Model Description:}
+A kernel Support Vector Machine using \texttt{sklearn.svm.SVC} with a Radial Basis Function (RBF) kernel. SVMs learn a decision boundary that maximizes the margin between the nearest training points (support vectors) of each class. The soft-margin objective allows some misclassifications, controlled by the penalty parameter $C$:
+\[
+\min_{\mathbf{w},b,\boldsymbol{\xi}}\;\frac{1}{2}\|\mathbf{w}\|^2 + C\sum_{i}\xi_i
+\quad\text{s.t.}\quad
+y_i(\mathbf{w}^\top\phi(\mathbf{x}_i)+b)\ge 1-\xi_i,\;\xi_i\ge 0.
+\]
+The kernel trick replaces the explicit mapping $\phi$ with a kernel function evaluated on pairs of input vectors, enabling the model to find non-linear boundaries without ever computing the high-dimensional feature map. The RBF kernel measures similarity between two TF--IDF vectors $\mathbf{x}$ and $\mathbf{x}'$ as:
+\[
+K(\mathbf{x},\mathbf{x}')=\exp\!\left(-\gamma\|\mathbf{x}-\mathbf{x}'\|^2\right),
+\]
+where $\gamma$ (left at the sklearn default, $1/(\text{n\_features}\cdot\text{Var}(\mathbf{X}))$) controls how quickly similarity decays with distance. The multiclass prediction uses one-vs-one voting across all $\binom{5}{2}=10$ binary sub-classifiers.
+ 
+\paragraph{Input Representation:}
+TF--IDF vectors produced by \texttt{sklearn.feature\_extraction.text.TfidfVectorizer} with \texttt{stop\_words='english'} and a vocabulary capped at \texttt{max\_features}. TF--IDF assigns higher weight to words that are frequent within a specific review but rare across the full corpus (e.g., ``undercooked'' or ``phenomenal''), making it a strong signal for sentiment-loaded vocabulary. No additional normalization is applied beyond what \texttt{TfidfVectorizer} performs internally (\texttt{norm='l2'} by default).
+ 
+\paragraph{Training Procedure:}
+Exact kernel SVM training requires computing and storing the full $n\times n$ kernel matrix, giving $O(n^2)$ memory and $O(n^3)$ time complexity. Training on the full 650,000-review corpus is therefore infeasible. The model is trained on a stratified subsample of 10,000 reviews by default (up to 20,000 with \texttt{--size N}). A 20\% stratified validation split is carved from this subsample for tuning; final runs evaluate on the official 50,000-review test partition. Training is CPU-only.
+ 
+\paragraph{Hyperparameters:}
+Two parameters were tuned:
+\begin{itemize}
+    \item \texttt{C}: soft-margin penalty. Smaller values allow more misclassifications but produce wider, more generalizable margins; larger values force a tighter fit to the training data.
+    \item \texttt{max\_features}: vocabulary cap for the TF--IDF vectorizer. Controls the size of the input space presented to the kernel.
+\end{itemize}
+ 
+\paragraph{Tuning Strategy:}
+Optuna Bayesian optimization with 15 trials on a 10,000-sample subsample (20\% validation split). Search space: $C \in [0.1, 10.0]$ (log scale), \texttt{max\_features} $\in \{5000, 10000, 15000\}$. Macro-F1 on the validation split was the objective. Notably, the best Optuna configuration did not outperform a manual setting of $C=1$ (the sklearn default), which was ultimately selected. This is expected behavior: with only 10,000 training samples the validation signal is noisy, and the well-validated default $C=1$ generalizes more reliably than configurations tuned on a small subsample. Best config: $C=1$, \texttt{max\_features }$=10{,}000$.
+ 
+\paragraph{Implementation Notes:}
+The training-set size cap is the dominant limitation of this model. The linear SVM and logistic regression train on 65 times more data and comfortably outperform the kernel SVM as a consequence. The RBF kernel's theoretical advantage (non-linear boundaries) cannot compensate for this data deficit. Theoretically, the model should be among the top performers, but in practice, it is difficult to use its structure within reasonable computation times.
 
 
 \subsection{Deep Learning Models}
@@ -435,6 +462,30 @@ Optuna Bayesian optimization with 20 trials via \texttt{utils.tuning.tune\_model
 \paragraph{Implementation Notes}
 Early runs without early stopping exhibited severe overfitting: training accuracy climbed above 85\% while validation accuracy plateaued near 61\%, indicating the model's capacity far exceeds what the TF-IDF representation can supply in useful signal. Batch normalization and increased dropout (0.6 in the best config) were the two changes that most reduced the train/val gap. The performance ceiling near 61\% is consistent with published results for bag-of-words MLP approaches on Yelp Full and is attributed primarily to the loss of word order at the input stage rather than insufficient model capacity.
 
+\subsubsection{Long-Short Term Memory (LSTM)}
+\textbf{Folder/Script:} \texttt{LSTM/LSTM.py}\\
+\textbf{Team Member:}
+
+\paragraph{Model Description}
+
+
+\paragraph{Pretrained Backbone}
+
+
+\paragraph{Tokenization and Input Format}
+
+
+\paragraph{Training Procedure}
+
+
+\paragraph{Hyperparameters}
+
+
+\paragraph{Tuning Strategy}
+
+
+\paragraph{Implementation Notes}
+
 
 \subsubsection{Convolutional Neural Network}
 \textbf{Folder/Script:} \texttt{CNN/CNN.py}\\
@@ -456,27 +507,61 @@ Early runs without early stopping exhibited severe overfitting: training accurac
 
 \subsubsection{Transformer (Encoder Only)}
 \textbf{Folder/Script:} \texttt{Transformers/Transformers.py}\\
-\textbf{Team Member:}
-
-\paragraph{Model Description}
-
-
-\paragraph{Input Representation}
-
-
-\paragraph{Architecture}
-
-
-\paragraph{Training Procedure}
-
-
-\paragraph{Hyperparameters}
-
-
-\paragraph{Tuning Strategy}
-
-
-\paragraph{Implementation Notes}
+\textbf{Team Member:} Anthony Mahon
+ 
+\paragraph{Model Description:}
+An encoder-only Transformer trained entirely from scratch on the YelpReviewFull dataset, implemented in PyTorch. The model follows the standard Transformer encoder design introduced by Vaswani et al.\ (2017): stacked multi-head self-attention blocks allow every token in a review to attend to every other token simultaneously, capturing long-range dependencies that recurrent models process sequentially. Unlike BERT or other pre-trained models, no external linguistic knowledge is used; every parameter, including the word embeddings, is initialized randomly and learned solely from the training reviews. This means that the model is not only learning the structure of the reviews, but also the structure of the English language itself.
+ 
+\paragraph{Input Representation:}
+Raw review text is lowercased and stripped of punctuation via a regular expression filter (\texttt{r"[\^{}\textbackslash w\textbackslash s]"}). The resulting token stream is split on whitespace and mapped to integer IDs using a frequency-ranked vocabulary built from the training corpus, capped at \texttt{max\_vocab=30,000} entries. Words outside the top 30k most common collapse to \texttt{<unk>} (index 1); sequences are truncated to a fixed length \texttt{max\_len}, producing an integer matrix of shape $[\texttt{batch\_size} \times \texttt{max\_len}]$.
+ 
+\paragraph{Architecture:}
+The model is implemented as \texttt{EncoderClassifier} in \texttt{Transformers/Transformers.py}, and consists of four components:
+\begin{enumerate}
+    \item \textbf{Token embedding} (\texttt{nn.Embedding}): maps each token ID to a dense \texttt{embed\_dim}-dimensional vector. Padding positions use \texttt{padding\_idx=0} and are excluded from attention via a key-padding mask passed to the encoder.
+    \item \textbf{Positional embedding} (\texttt{nn.Embedding}): a second learnable embedding maps each position index $(0, 1, \ldots, \texttt{max\_len}-1)$ to an \texttt{embed\_dim}-dimensional vector. Token and position embeddings are summed element-wise, giving the model awareness of word order.
+    \item \textbf{Transformer encoder stack} (\texttt{nn.TransformerEncoder}): \texttt{num\_layers} \texttt{TransformerEncoderLayer} blocks, each containing multi-head self-attention followed by a position-wise feed-forward sub-network with GELU activation. Self-attention is computed as:
+    \[
+    \text{Attn}(\mathbf{Q},\mathbf{K},\mathbf{V}) =
+    \text{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d_k}}\right)\mathbf{V},
+    \quad d_k = \frac{\texttt{embed\_dim}}{\texttt{num\_heads}}.
+    \]
+    The \texttt{batch\_first=True} convention is used throughout.
+    \item \textbf{Classification head}: non-padding token representations are mean-pooled (masking padding positions to prevent them from influencing the average), passed through layer normalization and dropout, and projected to five logits by a linear layer. The highest logit selects the predicted star rating.
+\end{enumerate}
+ 
+\paragraph{Training Procedure:}
+The optimizer used is AdamW (\texttt{torch.optim.AdamW}) with cross-entropy loss over the five-class softmax output. Training runs for \texttt{epochs} full passes over the training set in mini-batches of size \texttt{batch\_size}. After each epoch, macro-F1 is computed on the validation split and the best-scoring model state is saved separately; the best state is restored before final evaluation. Final runs use the full 650,000-review training partition (minus a 5\% stratified validation slice to identify the best model state) and require a GPU; the final reported run used a Tesla T4 provided through Google Collab.
+ 
+\paragraph{Hyperparameters:}
+Ten Optuna trials were run on a 20,000-sample training subsample (10\% validation split). The search space was:
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        Parameter & Type & Search Space \\
+        \midrule
+        \texttt{max\_vocab} & Categorical & \{15000, 25000, 30000\} \\
+        \texttt{max\_len}   & Categorical & \{96, 128, 160\} \\
+        \texttt{embed\_dim} & Categorical & \{128, 256\} \\
+        \texttt{num\_heads} & Categorical & \{4, 8\} \\
+        \texttt{num\_layers}& Categorical & \{2, 3\} \\
+        \texttt{ff\_dim}    & Categorical & \{256, 512\} \\
+        \texttt{dropout}    & Float       & $[0.1,\ 0.3]$ \\
+        \texttt{epochs}     & Categorical & \{2, 3\} \\
+        \texttt{batch\_size}& Categorical & \{32, 64\} \\
+        \texttt{lr}         & Float (log) & $[10^{-3},\ 7\times10^{-3}]$ \\
+        \texttt{weight\_decay} & Float (log) & $[10^{-5},\ 10^{-3}]$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+The best trial achieved a validation macro-F1 of 0.4994. Best config: \texttt{max\_vocab }$=15{,}000$, \texttt{max\_len }$=160$, \texttt{embed\_dim }$=256$, \texttt{num\_heads }$=8$, \texttt{num\_layers }$=2$, \texttt{ff\_dim }$=256$, \texttt{dropout }$=0.2658$, \texttt{lr }$=6.50\times10^{-4}$, \texttt{weight\_decay }$=3.14\times10^{-5}$, \texttt{batch\_size }$=64$, \texttt{epochs }$=3$.
+ 
+\paragraph{Tuning Strategy:}
+Optuna Bayesian optimization via \texttt{utils.tuning.tune\_model()}, objective is macro-F1 on the validation split. The tuning subsample (20,000 reviews) was chosen as the largest size that balances computation time on a T4, allowing 10 meaningful trials within a reasonable time budget.
+ 
+\paragraph{Implementation Notes:}
+Training is GPU-bound; a full final run on 650k reviews with 3 epochs takes approximately 21 minutes on a Tesla T4. CPU users are warned at startup that training will be prohibitively slow. The model uses \texttt{enable\_nested\_tensor=False} in \texttt{nn.TransformerEncoder} for compatibility across PyTorch versions. The best hyperparameter configuration found by Optuna provided an increase across all metrics of 1\%, at the cost of a 17-minute increase in computation time due to the new size of the embedding dimension. It should be noted that the improvement is not worth the expense taken, showcasing that the initial baseline, default parameters balanced performance with efficiency very well.
 
 
 \subsubsection{Large Language Model (Decoder Only)}
@@ -666,111 +751,169 @@ python CNN/CNN.py --discard --default
 \section{Results}
 \label{sec:results}
 
-\subsection{Validation Experiments}
-
-
-\subsection{Final Experiments}
-
-
-\subsection{Hardware and Software Environment}
-
-\begin{table}[h]
-    \centering
-    \begin{tabular}{ll}
-        \toprule
-        Item          & Value \\
-        \midrule
-        OS            &       \\
-        Python        &       \\
-        CPU           &       \\
-        GPU           &       \\
-        Key Libraries &       \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-\subsection{Tuning Budget}
-
-
-\subsection{Experiment Tracking}
-
-
 \subsection{Comparison Table}
-
-\begin{longtable}{p{0.18\textwidth} p{0.08\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.1\textwidth} p{0.14\textwidth}}
+\label{sec:comparison}
+ 
+\begin{longtable}{p{0.23\textwidth} p{0.09\textwidth} p{0.10\textwidth} p{0.10\textwidth} p{0.09\textwidth} p{0.10\textwidth} p{0.16\textwidth}}
     \toprule
-    Model                  & Split & Accuracy & Macro Precision & Macro Recall & Macro F1 & Runtime & Notes \\
+    Model & Accuracy & Macro Prec. & Macro Recall & Macro F1 & Runtime & Notes \\
     \midrule
-    Logistic Regression    &       &          &                 &              &          &         &       \\
-    Naive Bayes            &       &          &                 &              &          &         &       \\
-    Decision Tree          &       &          &                 &              &          &         &       \\
-    Random Forest          &       &          &                 &              &          &         &       \\
-    Linear SVM             &       &          &                 &              &          &         &       \\
-    Kernel SVM             &       &          &                 &              &          &         &       \\
-    Multi-Layer Perceptron &       &          &                 &              &          &         &       \\
-    CNN                    &       &          &                 &              &          &         &       \\
-    Transformer            &       &          &                 &              &          &         &       \\
-    Large Language Model   &       &          &                 &              &          &         &       \\
+    \endhead
+    Logistic Regression    & 0.6168 & 0.6146 & 0.6168 & 0.6156 & 1034.7 s & Best traditional \\
+    Naive Bayes            & 0.5525 & 0.5526 & 0.5525 & 0.5372 & $<$1 s   & Fastest model \\
+    Decision Tree          & 0.4082 & 0.4074 & 0.4082 & 0.4077 & 3850.8 s & Baseline \\
+    Random Forest          & 0.5555 & 0.5464 & 0.5555 & 0.5468 & 2632.9 s & \\
+    Linear SVM             & 0.5737 & 0.5640 & 0.5737 & 0.5656 & 103.4 s  & \\
+    Kernel SVM             & 0.5196 & 0.5183 & 0.5196 & 0.5186 & 217.6 s  & 10k subsample \\
+    \midrule
+        \multicolumn{7}{c}{\textbf{Traditional $\uparrow$ \ \ \ \ Deep Learning $\downarrow$}} \\
+    \midrule
+    Multi-Layer Perceptron & 0.6236 & 0.6179 & 0.6236 & 0.6196 & 1210.0 s  & \\
+    LSTM                   & 0.6679 & 0.6697 & 0.6679 & 0.6687 & 9894.0 s & \\
+    CNN (GloVe 2024)       & 0.6422 & 0.6412 & 0.6422 & 0.6408 & 226.4 s  &  Most efficient \\
+    Transformer            & 0.5854 & 0.5894 & 0.5854 & 0.5847 & 1296.6 s & From scratch \\
+    Large Language Model   & 0.6711 & 0.6694 & 0.6711 & 0.6701 & 17006.2 s & \textbf{Best overall}\\
     \bottomrule
 \end{longtable}
-
-\subsection{Per-Model Result Summaries}
+ 
+\subsection{Per-Model Analysis}
 
 \subsubsection{Logistic Regression}
+\textbf{Final hyperparameters:} $C=0.3792$, L2 penalty, \texttt{tfidf\_features}$=40000$, $n$-gram range $(1,2)$,\\
+\texttt{min\_df}$=2$, \texttt{max\_df}$=0.9$, \texttt{max\_iter}$=300$.\\
+\textbf{Test metrics:} Accuracy $0.6168$, macro-F1 $0.6156$.
 
+\confmatfig{confusion_matrix_logreg.png}
+{Confusion matrix: Logistic Regression}
+{Confusion matrix for the Logistic Regression final run.}
 
-\subsubsection{Naive Bayes}
+\textbf{Observations.} Logistic regression is the strongest measured traditional baseline. Its confusion matrix has a noticeably stronger diagonal than the SVM, NB, and tree-based models, with especially good separation for 1-star and 5-star reviews. The remaining errors are mostly adjacent-class mistakes: 3-star reviews split toward 2 and 4 stars, while 4-star and 5-star reviews are often confused with each  other. This shows that the linear softmax model captures the ordered sentiment structure even though it is trained as a nominal five-class classifier.
 
+\subsubsection{Complement Naive Bayes}
+\textbf{Final hyperparameters:} $\alpha=45$, TF--IDF \texttt{max\_features}$=20000$, $n$-gram range $(1,2)$.\\
+\textbf{Test metrics:} Accuracy $0.5525$, macro-F1 $0.5372$.
 
-\subsubsection{Decision Tree}
+\confmatfig{nb_confusion_matrix.png}
+{Confusion matrix: Complement NB}
+{Confusion matrix for the Complement Naive Bayes final run.}
 
+\textbf{Observations.} Complement NB is fast and competitive, but its confusion matrix shows a strong bias toward extreme sentiment words. It performs well on clear 1-star and 5-star reviews, but 2-star reviews are often predicted as 1 star, and 4-star reviews are often predicted as 5 stars. This pattern fits the model assumptions: isolated sentiment-heavy terms are useful, but the conditional-independence model struggles with mixed sentiment, negation, and reviews whose rating depends on multiple aspects.
+
+\subsubsection{Decision Tree Baseline}
+\textbf{Final hyperparameters:} \texttt{max\_depth}$=300$, \texttt{min\_samples\_leaf}$=10$.\\
+\textbf{Test metrics:} Accuracy $0.4082$, macro-F1 $0.4077$.
+
+\confmatfig{confusion_matrix_dt.png}
+{Confusion matrix: Decision Tree baseline}
+{Confusion matrix for the Decision Tree baseline final run.}
+
+\textbf{Observations.} The Decision Tree baseline confirms that a single tree is a poor fit for sparse TF--IDF sentiment classification. Its diagonal is much weaker than the stronger models, and errors spread broadly across neighboring classes. The model especially struggles with the middle ratings, where one path through a single tree cannot combine many weak lexical cues smoothly. This result motivates Random Forest: bagging many trees should reduce variance and produce more stable class decisions.
 
 \subsubsection{Random Forest}
+\textbf{Final hyperparameters:} \texttt{n\_estimators}$=500$, \texttt{max\_depth}$=150$, \texttt{min\_samples\_leaf}$=4$,\\
+\texttt{max\_features}$=$\,sqrt.\\
+\textbf{Test metrics:} Accuracy $0.5555$, macro-F1 $0.5468$.
 
+\confmatfig{confusion_matrix_rf.png}
+{Confusion matrix: Random Forest}
+{Confusion matrix for the Random Forest final run.}
+
+\textbf{Observations.} As the main tree-based traditional model, Random Forest substantially improves over the Decision Tree baseline. Its confusion matrix has a clearer diagonal, especially for 1-star and 5-star reviews, showing that bagging and feature subsampling recover more stable structure from the sparse feature space. However, the model still confuses neighboring ratings heavily, especially 2-star with 1-star or 3-star and 4-star with 5-star. This suggests that tree ensembles help, but sparse review sentiment remains better modeled by additive lexical evidence than by hard threshold splits.
 
 \subsubsection{Linear SVM}
+\textbf{Final hyperparameters:} $C=0.1062$, \texttt{max\_features}$=15000$.\\
+\textbf{Test metrics:} Accuracy $0.5737$, macro-F1 $0.5656$.
 
+\confmatfig{confusion_matrix_linear_svm.png}
+{Confusion matrix: Linear SVM}
+{Confusion matrix for the Linear SVM final run.}
 
-\subsubsection{Kernel SVM}
+\textbf{Observations.} The Linear SVM is a strong sparse-feature baseline, but it trails logistic regression. The confusion matrix shows the expected ordinal pattern: 1-star and 5-star reviews are classified most reliably, while the middle ratings are more ambiguous. The largest errors are adjacent-class mistakes, especially 2-star reviews predicted as 1 or 3 stars and 4-star reviews predicted as 5 stars. This indicates that the model learns broad sentiment direction but struggles to draw fine-grained boundaries between neighboring ratings.
 
+\subsubsection{Kernel SVM (RBF)}
+\textbf{Final hyperparameters:} RBF kernel, $C=1$, \texttt{max\_features }$=10000$.\\
+\textbf{Test metrics:} Accuracy $0.5196$, macro-F1 $0.5186$.
 
-\subsubsection{Multi-Layer Perceptron}
+\confmatfig{confusion_matrix_svm.png}
+{Confusion matrix: Kernel SVM}
+{Confusion matrix for the Kernel SVM final run.}
 
+\textbf{Observations.} The Kernel SVM underperforms the full-scale linear models because exact RBF-kernel training required subsampling. Its confusion matrix has a weaker diagonal than the stronger sparse-feature models, especially for the middle classes. The model still mostly makes adjacent-rating errors, but its class boundaries are less stable: 2-star reviews are often pushed toward 1 or 3 stars, and 4-star reviews are frequently confused with 5 stars. This supports treating the RBF SVM as a comparison point rather than the main high-performing sparse baseline.
 
-\subsubsection{Convolutional Neural Network}
+\subsubsection{MLP}
+\textbf{Final hyperparameters:} \texttt{hidden1}$=512$, \texttt{hidden2}$=512$, dropout $0.6$,\\
+learning rate $1.32\times10^{-4}$, weight decay $1.83\times10^{-5}$.\\
+\textbf{Test metrics:} Accuracy $0.6236$, macro-F1 $0.6196$.
 
+\confmatfig{mlp_confusion_matrix.png}
+{Confusion matrix: MLP}
+{Confusion matrix for the MLP final run.}
 
-\subsubsection{Transformer}
+\textbf{Observations.} The tuned MLP slightly beats logistic regression in accuracy and macro-F1, and its confusion matrix is broadly similar to the logistic regression matrix. It improves the diagonal for some classes, especially the extreme ratings, but the same adjacent-class ambiguity remains. The model still confuses 2-star reviews with 1-star or 3-star reviews and 4-star reviews with 5-star reviews. This suggests that nonlinear layers over TF--IDF add some capacity, but the sparse lexical representation itself still carries most of the signal.
 
+\subsubsection{LSTM}
+\textbf{Final hyperparameters:} \TODO[: fill final LSTM hyperparameters.]\\
+\textbf{Test metrics:} Accuracy 0.6679, macro-F1 0.6687
 
-\subsubsection{Large Language Model}
+\confmatfig{lstm_confusion_matrix.png}
+{Confusion matrix: LSTM}
+{Confusion matrix for the LSTM final run.}
 
+\textbf{Observations.} \TODO[: Analyze the LSTM confusion matrix. Discuss whether sequential state helps with middle-class reviews, whether errors are mostly adjacent, and how the LSTM compares against CNN, Transformer, and TF--IDF baselines.]
 
-\subsection{Visualizations}
+\subsubsection{TextCNN}
+\textbf{Final hyperparameters:} GloVe 2024 WikiGigaword 300d embeddings, 300 filters, widths $\{2,3,4,5\}$,\\
+dropout $0.3454$, learning rate $3.41\times10^{-4}$, batch size 128, 3 epochs.\\
+\textbf{Test metrics:} Accuracy $0.6422$, macro-F1 $0.6408$.
 
-\subsubsection{Confusion Matrices}
+\confmatfig{confusion_matrix_cnn.png}
+{Confusion matrix: TextCNN}
+{Confusion matrix for the TextCNN final run.}
 
+\textbf{Observations.} The TextCNN is the strongest measured model. Its confusion matrix has the clearest overall diagonal among the  measured models, with strong performance on 2-star, 3-star, and 5-star reviews compared with the traditional baselines. The dominant errors are still adjacent-rating confusions, especially 4-star reviews predicted as 3 or 5 stars and 5-star reviews predicted as 4 stars. This supports the conclusion that pre-trained word embeddings plus local convolutional features are effective for fine-grained Yelp sentiment, while the inherent ambiguity between neighboring ratings remains.
 
-\subsubsection{Tuning Curves/Loss Curves/Accuracy Curves}
+\subsubsection{Transformer Encoder}
+\textbf{Final hyperparameters:} 2 layers, 8 heads, embedding dimension 256, FFN dimension 256, dropout $0.2658$,\\
+learning rate $6.50\times10^{-4}$, weight decay $3.14\times10^{-5}$, max length 160, vocabulary cap 15K, batch size 64, 3 epochs.\\
+\textbf{Test metrics:} Accuracy $0.5854$, macro-F1 $0.5847$.
 
+\confmatfig{confusion_matrix_transformer.png}
+{Confusion matrix: Transformer Encoder}
+{Confusion matrix for the Transformer Encoder final run.}
 
-\subsection{Comparative Discussion}
+\textbf{Observations.} The from-scratch Transformer beats several traditional baselines but is beaten by logistic regression, MLP, and TextCNN. Its confusion matrix shows a strong diagonal for 2-star, 4-star, and 5-star reviews, but weaker separation for 3-star reviews, which are often predicted as 2 or 4 stars. The model captures broad sentiment direction, but without external pre-training it does not separate fine-grained rating boundaries as well as the CNN with GloVe embeddings.
 
-\subsubsection{Best-Performing Models}
+\subsubsection{Fine-Tuned LLM}
+\textbf{Final hyperparameters:} \TODO[: fill final LLM hyperparameters.]\\
+\textbf{Test metrics:} Accuracy 0.6711, macro-F1 0.6701.
 
+\confmatfig{llm_confusion_matrix.png}
+{Confusion matrix: Fine-Tuned LLM}
+{Confusion matrix for the fine-tuned LLM final run.}
 
-\subsubsection{Worst-Performing Models}
+\textbf{Observations.} \TODO[: Analyze the LLM confusion matrix. Discuss whether pre-trained contextual representations reduce middle-class confusion, whether adjacent-class errors still dominate, and how the LLM compares against TextCNN and Transformer.]
 
-
-\subsubsection{Traditional ML vs. Deep Learning}
-
-
-\subsubsection{Performance vs. Compute Tradeoffs}
-
-
+\subsection{Hyperparameter Sensitivity}
+Selected examples of sensitivity observed in tuning:
+\begin{itemize}[leftmargin=1.5em, itemsep=0.1em]
+    \item \textbf{Linear SVM:} performance was only weakly sensitive to $C$ inside the explored range; the selected $C\approx0.11$ regularizes more aggressively than the default.
+    \item \textbf{Decision Tree:} tree depth alone did not solve the sparse-feature mismatch; leaf-size regularization was necessary for stable validation performance.
+    \item \textbf{Random Forest:} increasing to hundreds of trees improved over the default, with \texttt{max\_features}$=$\, sqrt selected by tuning.
+    \item \textbf{LSTM:} \TODO[: add sensitivity note for embedding size, hidden size, sequence length, or dropout.]
+    \item \textbf{MLP:} final results were sensitive to optimization settings; the tuned configuration improved over logistic regression but only by a small margin.
+    \item \textbf{CNN:} the embedding source was the largest practical knob; GloVe 2024 WikiGigaword 300d gave the best measured final result.
+    \item \textbf{Transformer:} limited training budget and from-scratch embeddings capped performance relative to pre-trained-representation approaches.
+    \item \textbf{LLM:} \TODO[: add sensitivity note for base model, learning rate, sequence length, or fine-tuning strategy.]
+\end{itemize}
+ 
+\subsubsection{Performance vs.\ Compute Tradeoffs}
+ 
+Complement Naive Bayes completes in under one second and achieves 0.5372 macro-F1. Logistic Regression takes roughly 17 minutes and reaches 0.6156. The TextCNN takes 226 seconds on an RTX 5090 GPU and achieves 0.6408. The Transformer takes 1296 seconds (21.6 minutes) on a Tesla T4 and achieves only 0.5854---slower than the CNN and 5.6 points lower in macro-F1. For a practitioner constrained by compute, the lesson is clear: if pre-trained embeddings are available, a simple CNN architecture delivers near-maximum performance at a fraction of the cost of a from-scratch Transformer.
+ 
 \subsubsection{Error Patterns}
-
-
+ 
+Across all models, the dominant error pattern is adjacent-class confusion. Reviews at the boundary between 2 and 3 stars, or between 3 and 4 stars, share heavily overlapping vocabulary and are systematically harder than 1-star or 5-star reviews for every model tested. The 3-star class consistently has the lowest per-class recall across all models, as mixed-sentiment reviews can plausibly belong to multiple adjacent classes. Long-range errors (predicting 5 stars for a true 1-star review) are rare and occur less than 1\% of the time in the better models, confirming that all models have captured at least a broad notion of sentiment direction even when they fail on fine-grained distinctions.
+ 
 \section{Conclusions \& Future Work}
 
 \subsection{Key Findings}
